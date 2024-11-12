@@ -2,7 +2,7 @@ using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch.Codecs.SNAC;
+namespace NeuralCodecs.Torch.SNAC;
 
 public partial class SNAC
 {

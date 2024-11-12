@@ -1,13 +1,13 @@
-﻿using NeuralCodecs.Torch.Codecs.SNAC;
+﻿using NeuralCodecs.Torch.SNAC;
 using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.Modules;
 using TorchSharp.PyBridge;
-using static NeuralCodecs.Torch.Codecs.SNAC.SNAC;
+using static NeuralCodecs.Torch.SNAC.SNAC;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace SNACSharp;
+namespace NeuralCodecs.Torch.SNAC;
 
 public partial class SNAC
 {

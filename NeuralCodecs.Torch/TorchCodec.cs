@@ -1,15 +1,4 @@
-﻿using NeuralCodecs.Core.Exceptions;
-using NeuralCodecs.Core.Models;
-using NeuralCodecs.Core.Interfaces;
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using TorchSharp;
-
-namespace NeuralCodecs.Torch;
+﻿namespace NeuralCodecs.Torch;
 
 internal abstract class TorchCodec : ICodec
 {
@@ -17,13 +6,11 @@ internal abstract class TorchCodec : ICodec
     protected readonly CodecConfig Config;
     protected bool disposedValue;
 
-
     protected TorchCodec(CodecConfig config)
     {
         Config = config ?? new CodecConfig();
         Device = ResolveDevice(config.Device);
     }
-
 
     public abstract string Name { get; }
     public abstract CodecType Type { get; }
@@ -33,18 +20,6 @@ internal abstract class TorchCodec : ICodec
     public IDecoder Decoder { get; }
     public IQuantizer Quantizer { get; }
 
-    public abstract T Encode<T,T2>(T2 audio);
-    public abstract ValueTask<float[]> DecodeAsync(float[] codes, CancellationToken ct = default);
-
-    public virtual ValueTask<float[][]> EncodeBatchAsync(float[][] audio, CancellationToken ct = default)
-    {
-        throw new NotImplementedException("Batch processing not supported by this codec");
-    }
-
-    public virtual ValueTask<float[][]> DecodeBatchAsync(float[][] codes, CancellationToken ct = default)
-    {
-        throw new NotImplementedException("Batch processing not supported by this codec");
-    }
     private static torch.Device ResolveDevice(Core.Models.DeviceType requestedDevice)
     {
         return requestedDevice switch
