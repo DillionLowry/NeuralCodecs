@@ -1,15 +1,28 @@
-﻿using TorchSharp;
-using static TorchSharp.torch;
+﻿using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Utils;
 
 public static class TensorExtensions
 {
+    /// <summary>
+    /// Gets the dimensions of the tensor as a tuple (B, C, T)
+    /// </summary>
+    /// <param name="tensor">The input tensor</param>
+    /// <returns>A tuple containing the dimensions (B, C, T)</returns>
     public static (int B, int C, int T) GetDimensions(this Tensor tensor)
     {
         return ((int)tensor.size(0), (int)tensor.size(1), (int)tensor.size(2));
     }
 
+    /// <summary>
+    /// Performs L2 normalization of the input tensor along the specified dimension
+    /// </summary>
+    /// <param name="input">The input tensor</param>
+    /// <param name="p">The power for the norm calculation (default is 2.0)</param>
+    /// <param name="dim">The dimension along which to normalize (default is 1)</param>
+    /// <param name="keepDim">Whether to keep the dimensions (default is true)</param>
+    /// <param name="eps">A small epsilon value for numerical stability (default is 1e-12)</param>
+    /// <returns>The L2 normalized tensor</returns>
     public static Tensor L2Normalize(this Tensor input, double p = 2.0, int dim = 1, bool keepDim = true, double eps = 1e-12)
     {
         var norm = input.pow(2)
@@ -19,47 +32,14 @@ public static class TensorExtensions
         return input.div(norm);
     }
 
+    /// <summary>
+    /// Detaches the tensor from the computation graph
+    /// </summary>
+    /// <param name="tensor">The input tensor</param>
+    /// <returns>The detached tensor</returns>
     public static Tensor Detach(this Tensor tensor)
     {
         using var scope = NewDisposeScope();
         return tensor.detach().MoveToOuterDisposeScope();
     }
-
-    public static void PrintVals(this Tensor tensor, int count = 20, string name = "")
-    {
-        // Convert the tensor to an array
-        var tensorArray = tensor.clone().reshape(-1).to(float32).data<float>().ToArray();
-        Console.WriteLine(name ?? "Tensor values:");
-
-        Console.Write($"{string.Join(", ", tensorArray.Take(count / 2).Select(x => x.ToString("F30")))},");
-        Console.WriteLine($" , {string.Join(", ", tensorArray.TakeLast(count / 2).Select(x => x.ToString("F30")))}");
-    }
-
-    public static void WriteTensorToFile(this Tensor tensor, string filePath, int precision = 30, bool append = true, int? count = 200)
-    {
-        // Convert the tensor to an array
-        var tensorArray = tensor.clone().cpu().detach().reshape(-1).to(float32).data<float>().ToArray();
-
-        // Create a format string for the specified precision
-        string format = $"F{precision}";
-
-        // Write the tensor values to the file
-        using (var writer = new StreamWriter(filePath, append))
-        {
-            Console.WriteLine($"Tensor values ({tensorArray.Length} elements), printing {Math.Min(tensorArray.Length, count.Value)} elements:");
-            if (count is not null && count < tensorArray.Length)
-            {
-                writer.Write($"{string.Join(", ", tensorArray.Take(Math.Min(tensorArray.Length, count.Value) / 2).Select(x => x.ToString(format)))}");
-                writer.WriteLine($", {string.Join(", ", tensorArray.TakeLast(Math.Min(tensorArray.Length, count.Value) / 2).Select(x => x.ToString(format)))}");
-                writer.WriteLine();
-            }
-            else
-            {
-                writer.WriteLine($"{string.Join(", ", tensorArray.Select(x => x.ToString(format)))}");
-                writer.WriteLine();
-            }
-        }
-    }
-
-
 }
