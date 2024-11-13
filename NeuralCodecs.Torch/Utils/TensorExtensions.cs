@@ -1,4 +1,5 @@
-﻿using static TorchSharp.torch;
+﻿using TorchSharp;
+using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Utils;
 
@@ -11,6 +12,10 @@ public static class TensorExtensions
     /// <returns>A tuple containing the dimensions (B, C, T)</returns>
     public static (int B, int C, int T) GetDimensions(this Tensor tensor)
     {
+        if (tensor.dim() != 3)
+        {
+            throw new ArgumentException("Tensor must have 3 dimensions (B,C,T)");
+        }
         return ((int)tensor.size(0), (int)tensor.size(1), (int)tensor.size(2));
     }
 
@@ -25,11 +30,10 @@ public static class TensorExtensions
     /// <returns>The L2 normalized tensor</returns>
     public static Tensor L2Normalize(this Tensor input, double p = 2.0, int dim = 1, bool keepDim = true, double eps = 1e-12)
     {
-        var norm = input.pow(2)
-           .sum(dim, keepdim: keepDim)
-           .sqrt()
-           .add(1e-7); // Add small epsilon for stability
-        return input.div(norm);
+        return input.div(input.pow(2)
+                           .sum(dim, keepdim: keepDim)
+                           .sqrt()
+                           .add(eps));
     }
 
     /// <summary>
@@ -39,7 +43,8 @@ public static class TensorExtensions
     /// <returns>The detached tensor</returns>
     public static Tensor Detach(this Tensor tensor)
     {
-        using var scope = NewDisposeScope();
+        if (tensor.IsInvalid) return tensor;
+        using var scope = torch.NewDisposeScope();
         return tensor.detach().MoveToOuterDisposeScope();
     }
 }
