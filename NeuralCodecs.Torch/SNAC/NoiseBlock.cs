@@ -1,7 +1,7 @@
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch.SNAC;
+namespace NeuralCodecs.Torch;
 
 public partial class SNAC
 {
@@ -44,6 +44,15 @@ public partial class SNAC
             var h = linear.forward(x);
             var n = noise * h;
             return x + n;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                linear?.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }

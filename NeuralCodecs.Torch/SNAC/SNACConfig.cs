@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace NeuralCodecs.Torch.SNAC;
+namespace NeuralCodecs.Torch;
 
 public class SNACConfig
 {

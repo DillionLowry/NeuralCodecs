@@ -1,6 +1,6 @@
 using static TorchSharp.torch;
 
-namespace NeuralCodecs.Torch.SNAC;
+namespace NeuralCodecs.Torch;
 
 public partial class SNAC
 {
