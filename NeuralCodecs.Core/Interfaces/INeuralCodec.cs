@@ -1,5 +1,6 @@
 using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Models;
+using System.Runtime.CompilerServices;
 
 namespace NeuralCodecs.Core.Interfaces
 {

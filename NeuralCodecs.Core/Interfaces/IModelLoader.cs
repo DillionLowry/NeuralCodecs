@@ -9,12 +9,12 @@ namespace NeuralCodecs.Core.Interfaces
     /// <summary>
     /// Base class for backend-specific model loaders
     /// </summary>
-    public interface IModelLoader<TModel> where TModel : class, INeuralCodec
+    public interface IModelLoader
     {
         /// <summary>
         /// Loads a model from a local path or remote source
         /// </summary>
-        public async Task<TModel> LoadModel(string source, ModelLoadOptions? options = null)
+        public async Task<TModel> LoadModel<TModel>(string source, ModelLoadOptions? options = null) where TModel : INeuralCodec
         {
             options ??= new ModelLoadOptions();
 
@@ -22,11 +22,11 @@ namespace NeuralCodecs.Core.Interfaces
             {
                 if (IsLocalPath(source))
                 {
-                    return await LoadLocalModel(source, options);
+                    return await LoadLocalModel<TModel>(source, options);
                 }
                 else
                 {
-                    return await LoadRemoteModel(source, options);
+                    return await LoadRemoteModel<TModel>(source, options);
                 }
             }
             catch (Exception ex) when (ex is not ModelLoadException)
@@ -38,14 +38,14 @@ namespace NeuralCodecs.Core.Interfaces
         /// <summary>
         /// Creates a new model instance from config
         /// </summary>
-        public TModel CreateModel(ModelConfig config, Device? device = null);
+        public TModel CreateModel<TModel>(ModelConfig config, Device? device = null) where TModel : INeuralCodec;
 
         public void ClearCache();
 
         /// <summary>
         /// Saves a model to the specified path
         /// </summary>
-        public void SaveModel(TModel model, string path)
+        public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec
         {
             var directory = Path.GetDirectoryName(path)
                 ?? throw new ArgumentException("Invalid path", nameof(path));
@@ -101,7 +101,7 @@ namespace NeuralCodecs.Core.Interfaces
                    File.Exists(source);
         }
 
-        public async Task<TModel> LoadLocalModel(string path, ModelLoadOptions options)
+        public async Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec
         {
             if (!File.Exists(path))
                 throw new ModelLoadException($"Model file not found at {path}");
@@ -119,10 +119,10 @@ namespace NeuralCodecs.Core.Interfaces
             try
             {
                 var config = await LoadConfig<ModelConfig>(configPath);
-                var model = CreateModel(config, options.Device);
+                var model = CreateModel<TModel>(config, options.Device);
                 model.LoadWeights(path);
 
-                if (options.ValidateModel && !ValidateModel(model))
+                if (options.ValidateModel && !ValidateModel<TModel>(model))
                     throw new ModelLoadException("Model failed validation after loading");
 
                 return model;
@@ -133,11 +133,11 @@ namespace NeuralCodecs.Core.Interfaces
             }
         }
 
-        public Task<TModel> LoadRemoteModel(string source, ModelLoadOptions options);
+        public Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec;
 
         public Task<ModelInfo?> GetRemoteModelInfo(string source);
 
-        public bool ValidateModel(TModel model)
+        public bool ValidateModel<TModel>(TModel model) where TModel : INeuralCodec
         {
             // Basic validation - override for backend-specific checks
             return true;
@@ -193,29 +193,6 @@ namespace NeuralCodecs.Core.Interfaces
                 throw new ModelConfigException("Missing architecture type");
         }
 
-        public Task<TModel> LoadHuggingFaceModel(string repoId, ModelLoadOptions options);
-        //{
-        //    var loader = new HuggingFaceLoader(options.AuthToken);
-
-        //    try
-        //    {
-        //        // Check cache first
-        //        var modelPath = !options.ForceReload
-        //            ? Cache.GetCachedModel(repoId, options.Revision)
-        //            : null;
-
-        //        if (modelPath == null || !File.Exists(modelPath))
-        //        {
-        //            // Download model
-        //            modelPath = await Cache.CacheModel(repoId, options.Revision, loader);
-        //        }
-
-        //        return await LoadLocalModel(modelPath, options);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        throw new ModelLoadException($"Failed to load model from HuggingFace: {repoId}", ex);
-        //    }
-        //}
+        public Task<TModel> LoadHuggingFaceModel<TModel>(string repoId, ModelLoadOptions options) where TModel : INeuralCodec;
     }
 }

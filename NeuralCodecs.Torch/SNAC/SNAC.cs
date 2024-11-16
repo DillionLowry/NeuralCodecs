@@ -1,252 +1,18 @@
-﻿using NeuralCodecs.Torch.SNAC;
+﻿using NeuralCodecs.Core.Interfaces;
+using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Torch.Utils;
 using TorchSharp;
-using TorchSharp.Modules;
 using TorchSharp.PyBridge;
-using static NeuralCodecs.Torch.SNAC.SNAC;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
 namespace NeuralCodecs.Torch;
 
-public partial class SNAC
-{
-    public static bool UsePyBridge { get; set; } = true;
-
-    public static SNAC LoadModel(string path, Device device = null)
-    {
-        device ??= torch.CPU;
-
-        try
-        {
-            // Verify files exist
-            var configPath = Path.Combine(path, "config.json");
-
-            if (!File.Exists(configPath))
-                throw new FileNotFoundException($"Config file not found at {configPath}");
-
-            Console.WriteLine($"Loading config from {path}");
-            var config = LoadConfig(configPath);
-
-            // Create model on CPU first
-            var model = new SNAC(
-                samplingRate: config.SamplingRate,
-                encoderDim: config.EncoderDim,
-                encoderRates: config.EncoderRates,
-                latentDim: null,
-                decoderDim: config.DecoderDim,
-                decoderRates: config.DecoderRates,
-                attnWindowSize: config.AttnWindowSize,
-                codebookSize: config.CodebookSize,
-                codebookDim: config.CodebookDim,
-                vqStrides: config.VQStrides,
-                noise: config.Noise,
-                depthwise: config.Depthwise
-            );
-            // save state_dict keys to file
-            var dict = model.state_dict();
-            foreach (var kvp in dict)
-            {
-                //shapetracker.Track(kvp.Key, kvp.Value, "state_dict");
-            }
-
-            if (UsePyBridge)
-            {
-                Console.WriteLine("Using PyBridge to load model weights");
-                var modelPath = Path.Combine(@"T:\Models\SNAC", "pytorch_model_24khz.bin");
-                if (!File.Exists(modelPath))
-                    throw new FileNotFoundException($"Model weights not found at {modelPath}");
-                Console.WriteLine($"Loading weights from {modelPath}");
-
-                // Load using PyBridge's load_py
-                model.load_py(modelPath);
-            }
-            else
-            {
-                Console.WriteLine("Using TorchSharp to load model weights");
-                var modelPath = Path.Combine(path, "model_weights_24khz_wo.dat");
-                // Load using TorchSharp's native format
-                model.load(modelPath);
-            }
-            model.PrintModelStructure();
-            // Move to device after loading
-            if (device != null && device.type != DeviceType.CPU)
-            {
-                model.to(device);
-            }
-
-            model.eval();
-            return model;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading model from {path}");
-            Console.WriteLine($"Exception details: {ex}");
-            //shapetracker.DumpShapes();
-            throw;
-        }
-    }
-
-    public static void ConvertPyTorchToTorchSharp(string inputPath, string outputPath)
-    {
-        try
-        {
-            Console.WriteLine($"Converting model from {inputPath} to {outputPath}");
-
-            // Load config and create model
-            var configPath = Path.Combine(inputPath, "config.json");
-            var config = LoadConfig(configPath);
-
-            var model = new SNAC(
-                samplingRate: config.SamplingRate,
-                encoderDim: config.EncoderDim,
-                encoderRates: config.EncoderRates,
-                latentDim: null,
-                decoderDim: config.DecoderDim,
-                decoderRates: config.DecoderRates,
-                attnWindowSize: config.AttnWindowSize,
-                codebookSize: config.CodebookSize,
-                codebookDim: config.CodebookDim,
-                vqStrides: config.VQStrides,
-                noise: config.Noise,
-                depthwise: config.Depthwise
-            );
-
-            // Print initial model structure
-            Console.WriteLine("\nInitial model structure:");
-            foreach (var (name, param) in model.named_parameters())
-            {
-                Console.WriteLine($"{name}: {string.Join(",", param.shape)} | {param.dtype}");
-            }
-
-            // Load PyTorch weights
-            var modelPath = Path.Combine(inputPath, "pytorch_model.bin");
-            Console.WriteLine("\nLoading PyTorch weights...");
-            var loadedParams = new Dictionary<string, bool>();
-            model.load_py(modelPath, strict: false, loadedParameters: loadedParams);
-
-            // Print which parameters were loaded
-            Console.WriteLine("\nLoaded parameters:");
-            foreach (var (name, loaded) in loadedParams)
-            {
-                Console.WriteLine($"{name}: {(loaded ? "Loaded" : "Not loaded")}");
-            }
-
-            // Verify all parameters are in float32
-            Console.WriteLine("\nVerifying parameter types...");
-            foreach (var (name, param) in model.named_parameters())
-            {
-                if (param.dtype != torch.float32)
-                {
-                    Console.WriteLine($"Converting {name} from {param.dtype} to float32");
-                    using (torch.no_grad())
-                    {
-                        param.copy_(param.to(torch.float32));
-                    }
-                }
-            }
-
-            // Save in TorchSharp format
-            Console.WriteLine($"\nSaving converted model to {outputPath}");
-            var outputDir = Path.GetDirectoryName(outputPath);
-            if (!Directory.Exists(outputDir))
-                Directory.CreateDirectory(outputDir);
-
-            model.save(outputPath);
-
-            // Verify the saved model
-            Console.WriteLine("\nVerifying saved model...");
-            var testModel = new SNAC(
-                samplingRate: config.SamplingRate,
-                encoderDim: config.EncoderDim,
-                encoderRates: config.EncoderRates,
-                latentDim: null,
-                decoderDim: config.DecoderDim,
-                decoderRates: config.DecoderRates,
-                attnWindowSize: config.AttnWindowSize,
-                codebookSize: config.CodebookSize,
-                codebookDim: config.CodebookDim,
-                vqStrides: config.VQStrides,
-                noise: config.Noise,
-                depthwise: config.Depthwise
-            );
-
-            var verifyParams = new Dictionary<string, bool>();
-            testModel.load(outputPath, loadedParameters: verifyParams);
-
-            Console.WriteLine("\nVerification results:");
-            foreach (var (name, loaded) in verifyParams)
-            {
-                Console.WriteLine($"{name}: {(loaded ? "Verified" : "Failed")}");
-            }
-
-            Console.WriteLine("\nFinal model parameters:");
-            foreach (var (name, param) in testModel.named_parameters())
-            {
-                Console.WriteLine($"{name}: {string.Join(",", param.shape)} | {param.dtype}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error converting model: {ex}");
-            throw;
-        }
-    }
-
-    private static SNACConfig LoadConfig(string path)
-    {
-        var json = File.ReadAllText(path);
-        Console.WriteLine(json);
-        var config = System.Text.Json.JsonSerializer.Deserialize<SNACConfig>(json);
-
-        return config;
-    }
-
-    // Helper to get named parameters
-    public Dictionary<string, Tensor> state_dict()
-    {
-        var stateDict = new Dictionary<string, Tensor>();
-
-        // Add encoder parameters
-        foreach (var (name, param) in encoder.named_parameters())
-        {
-            stateDict[$"encoder.{name}"] = param.to(torch.float32);
-        }
-
-        // Add quantizer parameters
-        foreach (var (name, param) in quantizer.named_parameters())
-        {
-            stateDict[$"quantizer.{name}"] = param.to(torch.float32);
-        }
-
-        // Add decoder parameters
-        foreach (var (name, param) in decoder.named_parameters())
-        {
-            stateDict[$"decoder.{name}"] = param.to(torch.float32);
-        }
-
-        return stateDict;
-    }
-
-    // Helper to trace model structure
-    public void PrintModelStructure()
-    {
-        Console.WriteLine("Model Structure:");
-        foreach (var (name, param) in named_parameters())
-        {
-            if (param is Parameter p)
-            {
-                Console.WriteLine($"{name}: {string.Join(", ", p.shape)} | {p.dtype}");
-            }
-        }
-    }
-}
-
 /// <summary>
 /// Implements a neural audio codec that combines encoding, quantization, and decoding
 /// for efficient audio compression and reconstruction.
 /// </summary>
-public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>
+public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, INeuralCodec
 {
     private readonly int samplingRate;
     private readonly int encoderDim;
@@ -265,6 +31,12 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>
     private readonly Encoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
     private readonly Decoder decoder;
+
+    public ModelConfig Config { get; set; }
+
+    public string Architecture => "Torch";
+
+    public Core.Models.Device Device { get; set; }
 
     public SNAC(
         int samplingRate = 44100,
@@ -316,6 +88,50 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>
         RegisterComponents();
     }
 
+    public SNAC(SNACConfig config, torch.Device? device = null) : base("SNAC")
+    {
+        this.samplingRate = config.SamplingRate;
+        this.encoderDim = config.EncoderDim;
+        this.encoderRates = config.EncoderRates;
+        this.decoderDim = config.DecoderDim;
+        this.decoderRates = config.DecoderRates;
+        this.latentDim = config.LatentDim ?? config.EncoderDim * (1 << config.EncoderRates.Length);
+        this.hopLength = config.EncoderRates.Aggregate((a, b) => a * b);
+
+        encoder = new Encoder(
+            config.EncoderDim,
+            config.EncoderRates,
+            config.Depthwise,
+            config.AttnWindowSize);
+
+        this.vqStrides = config.VQStrides;
+        this.numCodebooks = config.VQStrides.Length;
+        this.codebookSize = config.CodebookSize;
+        this.codebookDim = config.CodebookDim;
+        this.attnWindowSize = config.AttnWindowSize;
+
+        quantizer = new ResidualVectorQuantizer(
+            this.latentDim,
+            config.CodebookSize,
+            config.CodebookDim,
+            config.VQStrides);
+
+        decoder = new Decoder(
+            this.latentDim,
+            config.DecoderDim,
+            config.DecoderRates,
+            config.Noise,
+            config.Depthwise,
+            config.AttnWindowSize);
+
+        RegisterComponents();
+
+        if (device != null)
+        {
+            this.to(device);
+        }
+    }
+
     /// <summary>
     /// Preprocessing method for input audio
     /// </summary>
@@ -325,41 +141,14 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>
     {
         var length = audioData.size(-1);
 
-        // Calculate LCM (Least Common Multiple)
         long lcm = MathUtils.LCM(vqStrides[0], this.attnWindowSize ?? 1);
         long padTo = hopLength * lcm;
 
-        // Calculate right padding
         long rightPad = (long)(Math.Ceiling((double)length / padTo) * padTo) - length;
 
         audioData = nn.functional.pad(audioData, (0, rightPad));
 
         return audioData;
-    }
-
-    /// <summary>
-    /// Loads a pretrained SNAC model from a repository
-    /// </summary>
-    /// <param name="repoId">Repository identifier</param>
-    /// <param name="kwargs">Additional loading parameters</param>
-    /// <returns>Initialized SNAC model in evaluation mode</returns>
-    /// <exception cref="Exception">Thrown when model loading fails</exception>
-    public static SNAC FromPretrained(string repoId, Dictionary<string, object> kwargs = null)
-    {
-        try
-        {
-            // Load model
-            Console.WriteLine($"Loading model from {repoId}");
-            var model = LoadModel(repoId);
-            model.eval(); // Set to evaluation mode before use
-            return model;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading model from {repoId}");
-            Console.WriteLine(ex.Message);
-            throw new Exception($"Error loading model from {repoId}", ex);
-        }
     }
 
     /// <summary>
@@ -404,5 +193,31 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>
         var audio = decoder.forward(zQ);
 
         return audio.MoveToOuterDisposeScope();
+    }
+
+    public void Save(string path)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void Load(string path)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void LoadWeights(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"PyTorch weights not found at {path}");
+
+        try
+        {
+            // TODO: torchsharp load
+            this.load_py(path);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to load PyTorch weights from {path}", ex);
+        }
     }
 }
