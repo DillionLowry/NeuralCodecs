@@ -14,26 +14,31 @@ namespace NeuralCodecs.Core.Interfaces
         /// <summary>
         /// Loads a model from a local path or remote source
         /// </summary>
-        public async Task<TModel> LoadModel<TModel>(string source, ModelLoadOptions? options = null) where TModel : INeuralCodec
-        {
-            options ??= new ModelLoadOptions();
+        public Task<TModel> LoadModelAsync<TModel>(string source, ModelConfig config = null) where TModel : class, INeuralCodec;
+        Task<TModel> LoadModelAsync<TModel>(
+            string path,
+            Func<ModelConfig, TModel> modelFactory,
+            ModelConfig config)
+            where TModel : class, INeuralCodec;
+        //{
+        //    options ??= new ModelLoadOptions();
 
-            try
-            {
-                if (IsLocalPath(source))
-                {
-                    return await LoadLocalModel<TModel>(source, options);
-                }
-                else
-                {
-                    return await LoadRemoteModel<TModel>(source, options);
-                }
-            }
-            catch (Exception ex) when (ex is not ModelLoadException)
-            {
-                throw new ModelLoadException($"Failed to load model from {source}", ex);
-            }
-        }
+        //    try
+        //    {
+        //        if (IsLocalPath(source))
+        //        {
+        //            return await LoadLocalModel<TModel>(source, options);
+        //        }
+        //        else
+        //        {
+        //            return await LoadRemoteModel<TModel>(source, options);
+        //        }
+        //    }
+        //    catch (Exception ex) when (ex is not ModelLoadException)
+        //    {
+        //        throw new ModelLoadException($"Failed to load model from {source}", ex);
+        //    }
+        //}
 
         /// <summary>
         /// Creates a new model instance from config
@@ -45,47 +50,47 @@ namespace NeuralCodecs.Core.Interfaces
         /// <summary>
         /// Saves a model to the specified path
         /// </summary>
-        public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec
-        {
-            var directory = Path.GetDirectoryName(path)
-                ?? throw new ArgumentException("Invalid path", nameof(path));
+        public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec;
+        //{
+        //    var directory = Path.GetDirectoryName(path)
+        //        ?? throw new ArgumentException("Invalid path", nameof(path));
 
-            Directory.CreateDirectory(directory);
+        //    Directory.CreateDirectory(directory);
 
-            // Save model weights
-            model.Save(path);
+        //    // Save model weights
+        //    model.Save(path);
 
-            // Save config
-            var configPath = Path.ChangeExtension(path, ".json");
-            SaveConfig(model.Config, configPath);
-        }
+        //    // Save config
+        //    var configPath = Path.ChangeExtension(path, ".json");
+        //    SaveConfig(model.Config, configPath);
+        //}
 
         /// <summary>
         /// Gets information about a model without loading it
         /// </summary>
-        public async Task<ModelInfo?> GetModelInfo(string source)
-        {
-            try
-            {
-                if (IsLocalPath(source))
-                {
-                    var config = await LoadConfig<ModelConfig>(source);
-                    return new ModelInfo
-                    {
-                        Source = source,
-                        Config = config,
-                        IsCached = true,
-                        LastModified = File.GetLastWriteTimeUtc(source),
-                    };
-                }
+        public Task<ModelInfo?> GetModelInfo(string source);
+        //{
+        //    try
+        //    {
+        //        if (IsLocalPath(source))
+        //        {
+        //            var config = await LoadConfig<ModelConfig>(source);
+        //            return new ModelInfo
+        //            {
+        //                Source = source,
+        //                Config = config,
+        //                IsCached = true,
+        //                LastModified = File.GetLastWriteTimeUtc(source),
+        //            };
+        //        }
 
-                return await GetRemoteModelInfo(source);
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        //        return await GetRemoteModelInfo(source);
+        //    }
+        //    catch
+        //    {
+        //        return null;
+        //    }
+        //}
 
         public string GetDefaultCacheDirectory();
         //{
@@ -101,37 +106,37 @@ namespace NeuralCodecs.Core.Interfaces
                    File.Exists(source);
         }
 
-        public async Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec
-        {
-            if (!File.Exists(path))
-                throw new ModelLoadException($"Model file not found at {path}");
+        public Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec;
+        //{
+        //    if (!File.Exists(path))
+        //        throw new ModelLoadException($"Model file not found at {path}");
 
-            var configPath = Path.ChangeExtension(path, ".json");
-            if (!File.Exists(configPath))
-            {
-                configPath = Path.Combine(Path.GetDirectoryName(path) ?? "", "config.json");
-            }
-            if (!File.Exists(configPath) && options.HasConfigFile)
-            {
-                throw new ModelLoadException($"Config file not found at {configPath}");
-            }
+        //    var configPath = Path.ChangeExtension(path, ".json");
+        //    if (!File.Exists(configPath))
+        //    {
+        //        configPath = Path.Combine(Path.GetDirectoryName(path) ?? "", "config.json");
+        //    }
+        //    if (!File.Exists(configPath) && options.HasConfigFile)
+        //    {
+        //        throw new ModelLoadException($"Config file not found at {configPath}");
+        //    }
 
-            try
-            {
-                var config = await LoadConfig<ModelConfig>(configPath);
-                var model = CreateModel<TModel>(config, options.Device);
-                model.LoadWeights(path);
+        //    try
+        //    {
+        //        var config = await LoadConfig<ModelConfig>(configPath);
+        //        var model = CreateModel<TModel>(config, options.Device);
+        //        model.LoadWeights(path);
 
-                if (options.ValidateModel && !ValidateModel<TModel>(model))
-                    throw new ModelLoadException("Model failed validation after loading");
+        //        if (options.ValidateModel && !ValidateModel<TModel>(model))
+        //            throw new ModelLoadException("Model failed validation after loading");
 
-                return model;
-            }
-            catch (Exception ex) when (ex is not ModelLoadException)
-            {
-                throw new ModelLoadException($"Failed to load model from {path}", ex);
-            }
-        }
+        //        return model;
+        //    }
+        //    catch (Exception ex) when (ex is not ModelLoadException)
+        //    {
+        //        throw new ModelLoadException($"Failed to load model from {path}", ex);
+        //    }
+        //}
 
         public Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec;
 
@@ -143,55 +148,55 @@ namespace NeuralCodecs.Core.Interfaces
             return true;
         }
 
-        public async Task<T> LoadConfig<T>(string path) where T : ModelConfig
-        {
-            try
-            {
-                if (!File.Exists(path))
-                    throw new FileNotFoundException($"Config file not found at {path}");
-                var json = await File.ReadAllTextAsync(path);
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    ReadCommentHandling = JsonCommentHandling.Skip
-                };
+        public Task<T> LoadConfig<T>(string path) where T : ModelConfig;
+        //{
+        //    try
+        //    {
+        //        if (!File.Exists(path))
+        //            throw new FileNotFoundException($"Config file not found at {path}");
+        //        var json = await File.ReadAllTextAsync(path);
+        //        var options = new JsonSerializerOptions
+        //        {
+        //            PropertyNameCaseInsensitive = true,
+        //            ReadCommentHandling = JsonCommentHandling.Skip
+        //        };
 
-                var config = JsonSerializer.Deserialize<T>(json, options)
-                    ?? throw new ModelLoadException("Failed to deserialize config");
+        //        var config = JsonSerializer.Deserialize<T>(json, options)
+        //            ?? throw new ModelLoadException("Failed to deserialize config");
 
-                //ValidateConfig(config);
-                return config;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                throw new ModelLoadException($"Failed to load config from {path}", ex);
-            }
-        }
+        //        //ValidateConfig(config);
+        //        return config;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Debug.WriteLine(ex);
+        //        throw new ModelLoadException($"Failed to load config from {path}", ex);
+        //    }
+        //}
 
-        public void SaveConfig(ModelConfig config, string path)
-        {
-            try
-            {
-                ValidateConfig(config);
-                var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
-                File.WriteAllText(path, json);
-            }
-            catch (Exception ex)
-            {
-                throw new ModelLoadException($"Failed to save config to {path}", ex);
-            }
-        }
+        public void SaveConfig(ModelConfig config, string path);
+        //{
+        //    try
+        //    {
+        //        ValidateConfig(config);
+        //        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+        //        {
+        //            WriteIndented = true,
+        //            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        //        });
+        //        File.WriteAllText(path, json);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        throw new ModelLoadException($"Failed to save config to {path}", ex);
+        //    }
+        //}
 
-        public void ValidateConfig(ModelConfig config)
-        {
-            if (string.IsNullOrEmpty(config.Architecture))
-                throw new ModelConfigException("Missing architecture type");
-        }
+        public void ValidateConfig(ModelConfig config);
+        //{
+        //    if (string.IsNullOrEmpty(config.Architecture))
+        //        throw new ModelConfigException("Missing architecture type");
+        //}
 
         public Task<TModel> LoadHuggingFaceModel<TModel>(string repoId, ModelLoadOptions options) where TModel : INeuralCodec;
     }

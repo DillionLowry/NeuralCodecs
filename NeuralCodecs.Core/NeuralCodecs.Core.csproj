@@ -7,6 +7,35 @@
 	  <IsPackable>false</IsPackable>
 	  <AssemblyName>NeuralCodecs.Core</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Loading\**" />
+    <Compile Remove="Models\**" />
+    <Compile Remove="Processing\**" />
+    <Compile Remove="Validation\**" />
+    <EmbeddedResource Remove="Loading\**" />
+    <EmbeddedResource Remove="Models\**" />
+    <EmbeddedResource Remove="Processing\**" />
+    <EmbeddedResource Remove="Validation\**" />
+    <None Remove="Loading\**" />
+    <None Remove="Models\**" />
+    <None Remove="Processing\**" />
+    <None Remove="Validation\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Class1.cs" />
+    <Compile Remove="Interfaces\IAudioProcessor.cs" />
+    <Compile Remove="Interfaces\ICodec.cs" />
+    <Compile Remove="Interfaces\ICodecState.cs" />
+    <Compile Remove="Interfaces\IDecoder.cs" />
+    <Compile Remove="Interfaces\IEncoder.cs" />
+    <Compile Remove="Interfaces\IModelProvider.cs" />
+    <Compile Remove="Interfaces\IMultiScaleCodec.cs" />
+    <Compile Remove="Interfaces\IQuantizer.cs" />
+    <Compile Remove="Interfaces\IResidualVectorQuantizer.cs" />
+    <Compile Remove="Utils\ModelLoader.cs" />
+  </ItemGroup>
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>NeuralCodecs.Torch</_Parameter1>
@@ -14,5 +43,22 @@
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>NeuralCodecs.ONNX</_Parameter1>
 		</AssemblyAttribute>
+	</ItemGroup>
+	<ItemGroup>
+	  <Compile Include="Loading\CachedFile.cs" />
+	  <Compile Include="Loading\CacheManager.cs" />
+	  <Compile Include="Loading\CacheMetadata.cs" />
+	  <Compile Include="Loading\HuggingFaceLoader.cs" />
+	  <Compile Include="Loading\ModelConfig.cs" />
+	  <Compile Include="Loading\ModelLoadErrorEventArgs.cs" />
+	  <Compile Include="Loading\ModelLoadOptions.cs" />
+	  <Compile Include="Loading\ModelLoadProgressEventArgs.cs" />
+	  <Compile Include="Loading\ModelLoadWarningEventArgs.cs" />
+	  <Compile Include="Loading\WildcardPattern.cs" />
+	  <Compile Include="Models\CodecOperation.cs" />
+	  <Compile Include="Models\Device.cs" />
+	  <Compile Include="Models\ModelInfo.cs" />
+	  <Compile Include="Models\RepoFile.cs" />
+	  <Compile Include="Models\RepoMetadata.cs" />
 	</ItemGroup>
 </Project>

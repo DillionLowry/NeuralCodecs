@@ -126,18 +126,17 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         RegisterComponents();
 
-        if (device != null)
-        {
-            this.to(device);
-        }
+        //if (config.Device != null)
+        //{
+        //    this.to(device);
+        //}
     }
-
-    /// <summary>
-    /// Preprocessing method for input audio
-    /// </summary>
-    /// <param name="audioData">Raw audio tensor</param>
-    /// <returns>Padded and normalized audio tensor</returns>
-    private Tensor Preprocess(Tensor audioData)
+        /// <summary>
+        /// Preprocessing method for input audio
+        /// </summary>
+        /// <param name="audioData">Raw audio tensor</param>
+        /// <returns>Padded and normalized audio tensor</returns>
+        private Tensor Preprocess(Tensor audioData)
     {
         var length = audioData.size(-1);
 
@@ -195,16 +194,6 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         return audio.MoveToOuterDisposeScope();
     }
 
-    public void Save(string path)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Load(string path)
-    {
-        throw new NotImplementedException();
-    }
-
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
@@ -220,4 +209,9 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
             throw new InvalidOperationException($"Failed to load PyTorch weights from {path}", ex);
         }
     }
+
+    //T2 INeuralCodec.Encode<T1, T2>(T1 input)
+    //{
+    //    throw new NotImplementedException();
+    //}
 }

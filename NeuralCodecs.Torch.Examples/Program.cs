@@ -4,6 +4,7 @@ using NeuralCodecs.Core.Models;
 using NeuralCodecs.Torch.Loading;
 using System.Globalization;
 using TorchSharp;
+using NeuralCodecs.Torch;
 using static TorchSharp.torch;
 
 
@@ -61,7 +62,10 @@ namespace NeuralCodecs.Torch.Examples
             // Initialize model
             using var scope = torch.NewDisposeScope();
 
-            var model = await NeuralCodecs.LoadModelAsync<SNAC>(modelPath);
+            var codecs = NeuralCodecsFactory.CreateTorchInstance();
+            var other = new NeuralCodecs(new TorchModelLoader());
+
+            var model = await codecs.LoadModelAsync<SNAC>(modelPath);
             model.eval();  // Set to evaluation mode
 
             // Load and preprocess audio

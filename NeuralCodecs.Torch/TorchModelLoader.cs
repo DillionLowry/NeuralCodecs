@@ -7,6 +7,7 @@ using System.Text.Json;
 using TorchSharp;
 using TorchSharp.PyBridge;
 using static TorchSharp.torch;
+using static TorchSharp.torch.optim.lr_scheduler.impl.CyclicLR;
 
 namespace NeuralCodecs.Torch.Loading;
 
@@ -40,9 +41,46 @@ public class TorchModelLoader : IModelLoader
     #endregion Events
 
     #region Methods
+    public async Task<TModel> LoadModelAsync<TModel>(string path, ModelConfig config) where TModel : class, INeuralCodec
+    {
+        var torchDevice = ConvertDevice(config.Device);
+        // Implementation for predefined models (e.g., SNAC)
 
-    // Return INeuralCodec or TMODEL?
-    public TModel CreateModel<TModel>(ModelConfig config, Core.Models.Device? device = null) where TModel : INeuralCodec
+        if (typeof(TModel) == typeof(SNAC)) {
+            var model = new SNAC(config as SNACConfig ?? new SNACConfig(), torchDevice);
+            model.LoadWeights(path);
+            return model as TModel;
+        }
+        throw new NotSupportedException($"Unsupported model type: {nameof(TModel)}");
+
+    }
+
+    public async Task<TModel> LoadModelAsync<TModel>(
+        string path,
+        Func<ModelConfig, TModel> modelFactory,
+        ModelConfig config) where TModel : class, INeuralCodec
+    {
+        var model = modelFactory(config);
+        model.LoadWeights(path);
+        return model;
+    }
+
+//private readonly Dictionary<string, IModelFactory> _modelFactories = new();
+
+//public void RegisterModelFactory(string modelType, IModelFactory factory)
+//{
+//    _modelFactories[modelType] = factory;
+//}
+
+//public TModel CreateModel<TModel>(ModelConfig config, Device? device = null) where TModel : INeuralCodec
+//{
+//    if (!_modelFactories.TryGetValue(config.Architecture, out var factory))
+//        throw new ArgumentException($"No factory registered for model type: {config.Architecture}");
+
+//    return (TModel)factory.CreateModel(config, device);
+//}
+// Return INeuralCodec or TMODEL?
+public TModel CreateModel<TModel>(ModelConfig config, Core.Models.Device? device = null) where TModel : INeuralCodec
     {
         var torchDevice = ConvertDevice(device);
         /* TODO: figure out how I want to do this
@@ -359,6 +397,31 @@ public class TorchModelLoader : IModelLoader
     }
 
     public Task<TModel> LoadHuggingFaceModel<TModel>(string repoId, ModelLoadOptions options) where TModel : INeuralCodec
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<TModel> LoadModel<TModel>(string source, ModelLoadOptions? options = null) where TModel : INeuralCodec
+    {
+        throw new NotImplementedException();
+    }
+
+    public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<ModelInfo?> GetModelInfo(string source)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void SaveConfig(ModelConfig config, string path)
+    {
+        throw new NotImplementedException();
+    }
+
+    void IModelLoader.ValidateConfig(ModelConfig config)
     {
         throw new NotImplementedException();
     }
