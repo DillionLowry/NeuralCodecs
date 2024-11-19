@@ -1,63 +1,72 @@
+using NeuralCodecs.Core.Interfaces;
 using NeuralCodecs.Core.Loading;
+using NeuralCodecs.Core.Models;
 using NeuralCodecs.Core.Utils;
 using System.Text.Json.Serialization;
 
 namespace NeuralCodecs.Torch;
 
 [method: JsonConstructor]
-public class SNACConfig() : ModelConfig
+public class SNACConfig() : IModelConfig
 {
+    [JsonIgnore]
+    public Device Device { get; set; } = Device.CPU;
+    [JsonIgnore]
+    public string Architecture { get; set; } = "snac";
+    [JsonIgnore]
+    public string Version { get; set; } = "1.0";
+    [JsonIgnore]
+    public IDictionary<string, string> Metadata { get; set; } = new Dictionary<string, string>();
+
     [JsonPropertyName("sampling_rate")]
-    public int SamplingRate { get; set; }
+    public int SamplingRate { get; set; }   = 44100;
 
     [JsonPropertyName("encoder_dim")]
-    public int EncoderDim { get; set; }
+    public int EncoderDim { get; set; }     = 64;
 
     [JsonPropertyName("encoder_rates")]
-    public int[] EncoderRates { get; set; }
+    public int[] EncoderRates { get; set; } = [3, 3, 7, 7];
 
     [JsonPropertyName("latent_dim")]
-    public int? LatentDim { get; set; }
+    public int? LatentDim { get; set; }     = null;
 
     [JsonPropertyName("decoder_dim")]
-    public int DecoderDim { get; set; }
+    public int DecoderDim { get; set; }     = 1536;
 
     [JsonPropertyName("decoder_rates")]
-    public int[] DecoderRates { get; set; }
+    public int[] DecoderRates { get; set; } = [7, 7, 3, 3];
 
     [JsonPropertyName("attn_window_size")]
-    public int? AttnWindowSize { get; set; }
+    public int? AttnWindowSize { get; set; } = 32;
 
     [JsonPropertyName("codebook_size")]
-    public int CodebookSize { get; set; }
+    public int CodebookSize { get; set; }   = 4096;
 
     [JsonPropertyName("codebook_dim")]
-    public int CodebookDim { get; set; }
+    public int CodebookDim { get; set; }    = 8;
 
     [JsonPropertyName("vq_strides")]
-    public int[] VQStrides { get; set; }
+    public int[] VQStrides { get; set; }    = [8, 4, 2, 1];
 
     [JsonPropertyName("noise")]
-    public bool Noise { get; set; }
+    public bool Noise { get; set; }         = true;
 
     [JsonPropertyName("depthwise")]
-    public bool Depthwise { get; set; }
+    public bool Depthwise { get; set; }     = true;
+
 
     [JsonIgnore]
-    public static SNACConfig Large { get => large; set => large = value; }
+    public static SNACConfig SNAC44Khz => new();
 
     [JsonIgnore]
-    public static SNACConfig Small { get => small; set => small = value; }
-
-    [JsonIgnore]
-    private static SNACConfig large = new()
+    public static SNACConfig SNAC32Khz => new()
     {
-        SamplingRate = 44100,
+        SamplingRate = 32000,
         EncoderDim = 64,
-        EncoderRates = [3, 3, 7, 7],
+        EncoderRates = [2, 3, 8, 8],
         LatentDim = null,
         DecoderDim = 1536,
-        DecoderRates = [7, 7, 3, 3],
+        DecoderRates = [8, 8, 3, 2],
         AttnWindowSize = 32,
         CodebookSize = 4096,
         CodebookDim = 8,
@@ -65,9 +74,8 @@ public class SNACConfig() : ModelConfig
         Noise = true,
         Depthwise = true,
     };
-
     [JsonIgnore]
-    private static SNACConfig small = new()
+    public static SNACConfig SNAC24Khz => new()
     {
         SamplingRate = 24000,
         EncoderDim = 48,
@@ -82,52 +90,4 @@ public class SNACConfig() : ModelConfig
         Noise = true,
         Depthwise = true,
     };
-
-    [JsonIgnore]
-    private List<string> _errors = new();
-
-    public override bool Validate()
-    {
-        return GetErrors().Count <= 0;
-    }
-
-    public virtual List<string> GetErrors()
-    {
-        _errors = new List<string>();
-
-        if (SamplingRate <= 0)
-            _errors.Add($"Invalid sampling rate: {SamplingRate}");
-
-        if (EncoderDim <= 0)
-            _errors.Add($"Invalid encoder dimension: {EncoderDim}");
-
-        if (DecoderDim <= 0)
-            _errors.Add($"Invalid decoder dimension: {DecoderDim}");
-
-        if (EncoderRates.IsNullOrEmpty())
-            _errors.Add("Missing encoder rates");
-        else if (EncoderRates.Any(r => r <= 0))
-            _errors.Add("Invalid encoder rate values");
-
-        if (DecoderRates.IsNullOrEmpty())
-            _errors.Add("Missing decoder rates");
-        else if (DecoderRates.Any(r => r <= 0))
-            _errors.Add("Invalid decoder rate values");
-
-        if (AttnWindowSize <= 0)
-            _errors.Add($"Invalid attention window size: {AttnWindowSize}");
-
-        if (CodebookSize <= 0)
-            _errors.Add($"Invalid codebook size: {CodebookSize}");
-
-        if (CodebookDim <= 0)
-            _errors.Add($"Invalid codebook dimension: {CodebookDim}");
-
-        if (VQStrides.IsNullOrEmpty())
-            _errors.Add("Missing VQ strides");
-        else if (VQStrides.Any(s => s <= 0))
-            _errors.Add("Invalid VQ stride values");
-
-        return _errors;
-    }
 }

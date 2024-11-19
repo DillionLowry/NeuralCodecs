@@ -1,203 +1,111 @@
-using NeuralCodecs.Core.Exceptions;
 using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Models;
-using System.Diagnostics;
-using System.Text.Json;
-
+// TODO: Cleanup and refactor
 namespace NeuralCodecs.Core.Interfaces
 {
     /// <summary>
-    /// Base class for backend-specific model loaders
+    /// Base interface for backend-specific model loaders
     /// </summary>
     public interface IModelLoader
     {
         /// <summary>
-        /// Loads a model from a local path or remote source
+        /// Event raised when a model loading error occurs
         /// </summary>
-        public Task<TModel> LoadModelAsync<TModel>(string source, ModelConfig config = null) where TModel : class, INeuralCodec;
-        Task<TModel> LoadModelAsync<TModel>(
+        event EventHandler<ModelLoadErrorEventArgs> OnError;
+
+        /// <summary>
+        /// Event raised to report model loading progress
+        /// </summary>
+        event EventHandler<ModelLoadProgressEventArgs> OnProgress;
+
+
+        /// <summary>
+        /// Registers a validator for a specific model configuration type
+        /// </summary>
+        /// <typeparam name="TConfig">Type of model configuration</typeparam>
+        /// <param name="validator">Validator implementation</param>
+        void RegisterValidator<TConfig>(IModelValidator<TConfig> validator) where TConfig : IModelConfig;
+
+        /// <summary>
+        /// Loads a model from a path with optional configuration
+        /// </summary>
+        /// <typeparam name="TModel">Type of model to load</typeparam>
+        /// <typeparam name="TConfig">Type of config to load</typeparam>
+        /// <param name="path">Path to model file</param>
+        /// <param name="config">Optional model configuration</param>
+        /// <returns>Loaded model instance</returns>
+        Task<TModel> LoadModelAsync<TModel, TConfig>(string path, TConfig? config = default, ModelLoadOptions? options = null)
+            where TModel : class, INeuralCodec
+            where TConfig : class, IModelConfig;
+
+        /// <summary>
+        /// Loads a model using a custom factory function and configuration
+        /// </summary>
+        /// <typeparam name="TModel">Type of model to load</typeparam>
+        /// <typeparam name="TConfig">Type of config to load</typeparam>
+        /// <param name="path">Path to model file</param>
+        /// <param name="modelFactory">Factory function to create the model instance</param>
+        /// <param name="config">Model configuration</param>
+        /// <returns>Loaded model instance</returns>
+        Task<TModel> LoadModelAsync<TModel, TConfig>(
             string path,
-            Func<ModelConfig, TModel> modelFactory,
-            ModelConfig config)
-            where TModel : class, INeuralCodec;
-        //{
-        //    options ??= new ModelLoadOptions();
+            Func<IModelConfig, TModel> modelFactory,
+            TConfig config,
+            ModelLoadOptions? options = null)
+            where TModel : class, INeuralCodec
+            where TConfig : class, IModelConfig;
 
-        //    try
-        //    {
-        //        if (IsLocalPath(source))
-        //        {
-        //            return await LoadLocalModel<TModel>(source, options);
-        //        }
-        //        else
-        //        {
-        //            return await LoadRemoteModel<TModel>(source, options);
-        //        }
-        //    }
-        //    catch (Exception ex) when (ex is not ModelLoadException)
-        //    {
-        //        throw new ModelLoadException($"Failed to load model from {source}", ex);
-        //    }
-        //}
+        ///// <summary>
+        ///// Loads a model from a local file path
+        ///// </summary>
+        ///// <typeparam name="TModel">Type of model to load</typeparam>
+        ///// <param name="path">Path to model file</param>
+        ///// <param name="options">Loading options</param>
+        ///// <returns>Loaded model instance</returns>
+        //    Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec;
 
-        /// <summary>
-        /// Creates a new model instance from config
-        /// </summary>
-        public TModel CreateModel<TModel>(ModelConfig config, Device? device = null) where TModel : INeuralCodec;
+        ///// <summary>
+        ///// Loads a model from a remote source
+        ///// </summary>
+        ///// <typeparam name="TModel">Type of model to load</typeparam>
+        ///// <param name="source">Remote source identifier (e.g., HuggingFace model ID)</param>
+        ///// <param name="options">Loading options</param>
+        ///// <returns>Loaded model instance</returns>
+        //Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec;
 
-        public void ClearCache();
-
-        /// <summary>
-        /// Saves a model to the specified path
-        /// </summary>
-        public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec;
-        //{
-        //    var directory = Path.GetDirectoryName(path)
-        //        ?? throw new ArgumentException("Invalid path", nameof(path));
-
-        //    Directory.CreateDirectory(directory);
-
-        //    // Save model weights
-        //    model.Save(path);
-
-        //    // Save config
-        //    var configPath = Path.ChangeExtension(path, ".json");
-        //    SaveConfig(model.Config, configPath);
-        //}
+        ///// <summary>
+        ///// Creates a new model instance from configuration
+        ///// </summary>
+        ///// <typeparam name="TModel">Type of model to create</typeparam>
+        ///// <param name="config">Model configuration</param>
+        ///// <param name="device">Target device for the model</param>
+        ///// <returns>Created model instance</returns>
+        //TModel CreateModel<TModel>(IModelConfig config, Device? device = null) where TModel : INeuralCodec;
 
         /// <summary>
         /// Gets information about a model without loading it
         /// </summary>
-        public Task<ModelInfo?> GetModelInfo(string source);
-        //{
-        //    try
-        //    {
-        //        if (IsLocalPath(source))
-        //        {
-        //            var config = await LoadConfig<ModelConfig>(source);
-        //            return new ModelInfo
-        //            {
-        //                Source = source,
-        //                Config = config,
-        //                IsCached = true,
-        //                LastModified = File.GetLastWriteTimeUtc(source),
-        //            };
-        //        }
+        /// <param name="source">Model source (local path or remote identifier)</param>
+        /// <returns>Model information if available, null otherwise</returns>
+        Task<ModelInfo?> GetModelInfo(string source);
 
-        //        return await GetRemoteModelInfo(source);
-        //    }
-        //    catch
-        //    {
-        //        return null;
-        //    }
-        //}
+        /// <summary>
+        /// Checks if a source string represents a local file path
+        /// </summary>
+        /// <param name="source">Source string to check</param>
+        /// <returns>True if source is a local path, false otherwise</returns>
+        bool IsLocalPath(string source);
 
-        public string GetDefaultCacheDirectory();
-        //{
-        //    return Path.Combine(
-        //        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        //        ".cache", "neural_codecs", BackendName.ToLowerInvariant());
-        //}
+        /// <summary>
+        /// Gets the default cache directory for this model loader
+        /// </summary>
+        /// <returns>Path to default cache directory</returns>
+        string GetDefaultCacheDirectory();
 
-        public bool IsLocalPath(string source)
-        {
-            return source.Contains(Path.DirectorySeparatorChar) ||
-                   source.Contains(Path.AltDirectorySeparatorChar) ||
-                   File.Exists(source);
-        }
-
-        public Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec;
-        //{
-        //    if (!File.Exists(path))
-        //        throw new ModelLoadException($"Model file not found at {path}");
-
-        //    var configPath = Path.ChangeExtension(path, ".json");
-        //    if (!File.Exists(configPath))
-        //    {
-        //        configPath = Path.Combine(Path.GetDirectoryName(path) ?? "", "config.json");
-        //    }
-        //    if (!File.Exists(configPath) && options.HasConfigFile)
-        //    {
-        //        throw new ModelLoadException($"Config file not found at {configPath}");
-        //    }
-
-        //    try
-        //    {
-        //        var config = await LoadConfig<ModelConfig>(configPath);
-        //        var model = CreateModel<TModel>(config, options.Device);
-        //        model.LoadWeights(path);
-
-        //        if (options.ValidateModel && !ValidateModel<TModel>(model))
-        //            throw new ModelLoadException("Model failed validation after loading");
-
-        //        return model;
-        //    }
-        //    catch (Exception ex) when (ex is not ModelLoadException)
-        //    {
-        //        throw new ModelLoadException($"Failed to load model from {path}", ex);
-        //    }
-        //}
-
-        public Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec;
-
-        public Task<ModelInfo?> GetRemoteModelInfo(string source);
-
-        public bool ValidateModel<TModel>(TModel model) where TModel : INeuralCodec
-        {
-            // Basic validation - override for backend-specific checks
-            return true;
-        }
-
-        public Task<T> LoadConfig<T>(string path) where T : ModelConfig;
-        //{
-        //    try
-        //    {
-        //        if (!File.Exists(path))
-        //            throw new FileNotFoundException($"Config file not found at {path}");
-        //        var json = await File.ReadAllTextAsync(path);
-        //        var options = new JsonSerializerOptions
-        //        {
-        //            PropertyNameCaseInsensitive = true,
-        //            ReadCommentHandling = JsonCommentHandling.Skip
-        //        };
-
-        //        var config = JsonSerializer.Deserialize<T>(json, options)
-        //            ?? throw new ModelLoadException("Failed to deserialize config");
-
-        //        //ValidateConfig(config);
-        //        return config;
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        Debug.WriteLine(ex);
-        //        throw new ModelLoadException($"Failed to load config from {path}", ex);
-        //    }
-        //}
-
-        public void SaveConfig(ModelConfig config, string path);
-        //{
-        //    try
-        //    {
-        //        ValidateConfig(config);
-        //        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
-        //        {
-        //            WriteIndented = true,
-        //            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        //        });
-        //        File.WriteAllText(path, json);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        throw new ModelLoadException($"Failed to save config to {path}", ex);
-        //    }
-        //}
-
-        public void ValidateConfig(ModelConfig config);
-        //{
-        //    if (string.IsNullOrEmpty(config.Architecture))
-        //        throw new ModelConfigException("Missing architecture type");
-        //}
-
-        public Task<TModel> LoadHuggingFaceModel<TModel>(string repoId, ModelLoadOptions options) where TModel : INeuralCodec;
+        /// <summary>
+        /// Clears the model cache
+        /// </summary>
+        /// <param name="modelId">Optional specific model ID to clear, or null to clear all</param>
+        void ClearCache(string? modelId = null);
     }
 }

@@ -33,5 +33,6 @@ namespace NeuralCodecs.Core.Loading
         public string? AuthToken { get; init; }
 
         public bool HasConfigFile { get; init; }
+        public bool RequireConfig { get; init; }
     }
 }

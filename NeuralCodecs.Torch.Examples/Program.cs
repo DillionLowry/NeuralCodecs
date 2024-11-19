@@ -1,7 +1,5 @@
 ﻿using NAudio.Wave;
-using NeuralCodecs.Core.Loading;
-using NeuralCodecs.Core.Models;
-using NeuralCodecs.Torch.Loading;
+
 using System.Globalization;
 using TorchSharp;
 using NeuralCodecs.Torch;
@@ -62,14 +60,11 @@ namespace NeuralCodecs.Torch.Examples
             // Initialize model
             using var scope = torch.NewDisposeScope();
 
-            var codecs = NeuralCodecsFactory.CreateTorchInstance();
-            var other = new NeuralCodecs(new TorchModelLoader());
-
-            var model = await codecs.LoadModelAsync<SNAC>(modelPath);
-            model.eval();  // Set to evaluation mode
+            var model = await NeuralCodecs.CreateSNACAsync(modelPath, SNACConfig.SNAC24Khz);
 
             // Load and preprocess audio
             var audioData = LoadAudioFile(inputPath, targetSampleRate: 24000);
+
             var device = cuda.is_available() ? CUDA : CPU;
             model.to(device);
             audioData = audioData.to(device);
@@ -175,22 +170,6 @@ namespace NeuralCodecs.Torch.Examples
             Console.WriteLine($"Original audio size: {originalSize / 1024.0:F2} KB");
             Console.WriteLine($"Compressed size: {compressedSize / 1024.0:F2} KB");
             Console.WriteLine($"Compression ratio: {(float)originalSize / compressedSize:F2}:1");
-        }
-
-        private static Tensor PostprocessAudio(Tensor audio)
-        {
-            // Normalize
-            audio = audio / audio.abs().max();
-
-            // Optional: Apply slight lowpass filter to reduce artifacts
-            var kernel = torch.hann_window(5).reshape(1, 1, -1);
-            audio = torch.nn.functional.conv1d(
-                audio,
-                kernel,
-                padding: 2
-            );
-
-            return audio;
         }
 
         public static List<Tensor> LoadTensorsFromFile(string filePath)

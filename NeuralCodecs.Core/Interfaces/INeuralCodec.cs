@@ -1,4 +1,3 @@
-using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Models;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -10,7 +9,7 @@ namespace NeuralCodecs.Core.Interfaces
     /// </summary>
     public interface INeuralCodec : IDisposable
     {
-        ModelConfig Config { get; }
+        IModelConfig Config { get; }
 
         //void Save(string path);
 

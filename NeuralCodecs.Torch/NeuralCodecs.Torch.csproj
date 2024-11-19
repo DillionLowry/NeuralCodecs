@@ -11,18 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="NeuralCodecs.cs" />
+    <Compile Remove="NeuralCodecsExtensions.cs" />
     <Compile Remove="TorchCodec.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NeuralCodecs.Core\NeuralCodecs.Core.csproj" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Codecs\DAC\" />
-    <Folder Include="Codecs\Encodec\" />
-    <Folder Include="Models\" />
   </ItemGroup>
 
   <ItemGroup>

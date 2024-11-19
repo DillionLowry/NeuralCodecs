@@ -1,11 +1,18 @@
 namespace NeuralCodecs.Core.Models //TODO THIS NEEDS WORK
 {
-    /// <summary>
-    /// Generic device abstraction
-    /// </summary>
-    public abstract class Device
+    public enum DeviceType
     {
-        public abstract string Type { get; }
-        public abstract int Index { get; }
+        CPU,
+        CUDA,
+        DirectML
+    }
+
+    public record Device
+    {
+        public DeviceType Type { get; init; }
+        public int Index { get; init; }
+
+        public static Device CPU => new() { Type = DeviceType.CPU, Index = 0 };
+        public static Device CUDA(int index = 0) => new() { Type = DeviceType.CUDA, Index = index };
     }
 }

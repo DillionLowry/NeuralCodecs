@@ -2,129 +2,221 @@ using NeuralCodecs.Core.Exceptions;
 using NeuralCodecs.Core.Interfaces;
 using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Models;
-using System.Diagnostics;
 using System.Text.Json;
 using TorchSharp;
-using TorchSharp.PyBridge;
 using static TorchSharp.torch;
-using static TorchSharp.torch.optim.lr_scheduler.impl.CyclicLR;
+using DeviceType = NeuralCodecs.Core.Models.DeviceType;
 
-namespace NeuralCodecs.Torch.Loading;
+namespace NeuralCodecs.Torch;
 
+// TODO: Cleanup and refactor
 public class TorchModelLoader : IModelLoader
 {
     #region Fields
 
-    private readonly HuggingFaceLoader _hubLoader;
-    internal readonly CacheManager Cache;
-    //protected readonly string BackendName;
-
+    private readonly IModelCache _cache;
+    private readonly ModelRegistry _registry;
+    private readonly IModelRepository _repository;
+    private readonly Dictionary<Type, object> _validators = new();
     #endregion Fields
-
-    #region Constructors
-
-    public TorchModelLoader(string? authToken = null, string? cacheDir = null)
+    public TorchModelLoader(
+        IModelCache? cache = null,
+        IModelRepository? repository = null,
+        IModelValidator<IModelConfig>? validator = null)
     {
-        _hubLoader = new HuggingFaceLoader(authToken);
-    }
-
-    #endregion Constructors
-
-    #region Events
-
-    public event EventHandler<ModelLoadErrorEventArgs>? OnError;
-
-    public event EventHandler<ModelLoadProgressEventArgs>? OnProgress;
-
-    public event EventHandler<ModelLoadWarningEventArgs>? OnWarning;
-
-    #endregion Events
-
-    #region Methods
-    public async Task<TModel> LoadModelAsync<TModel>(string path, ModelConfig config) where TModel : class, INeuralCodec
-    {
-        var torchDevice = ConvertDevice(config.Device);
-        // Implementation for predefined models (e.g., SNAC)
-
-        if (typeof(TModel) == typeof(SNAC)) {
-            var model = new SNAC(config as SNACConfig ?? new SNACConfig(), torchDevice);
-            model.LoadWeights(path);
-            return model as TModel;
+        _cache = cache ?? new DefaultModelCache();
+        _repository = repository ?? new HuggingFaceRepository();
+        if (validator != null)
+        {
+            RegisterValidator(validator);
         }
-        throw new NotSupportedException($"Unsupported model type: {nameof(TModel)}");
-
+        _registry = CreateDefaultRegistry();
     }
 
-    public async Task<TModel> LoadModelAsync<TModel>(
-        string path,
-        Func<ModelConfig, TModel> modelFactory,
-        ModelConfig config) where TModel : class, INeuralCodec
-    {
-        var model = modelFactory(config);
-        model.LoadWeights(path);
-        return model;
-    }
+    public event EventHandler<ModelLoadErrorEventArgs> OnError;
 
-//private readonly Dictionary<string, IModelFactory> _modelFactories = new();
-
-//public void RegisterModelFactory(string modelType, IModelFactory factory)
-//{
-//    _modelFactories[modelType] = factory;
-//}
-
-//public TModel CreateModel<TModel>(ModelConfig config, Device? device = null) where TModel : INeuralCodec
-//{
-//    if (!_modelFactories.TryGetValue(config.Architecture, out var factory))
-//        throw new ArgumentException($"No factory registered for model type: {config.Architecture}");
-
-//    return (TModel)factory.CreateModel(config, device);
-//}
-// Return INeuralCodec or TMODEL?
-public TModel CreateModel<TModel>(ModelConfig config, Core.Models.Device? device = null) where TModel : INeuralCodec
-    {
-        var torchDevice = ConvertDevice(device);
-        /* TODO: figure out how I want to do this
-         * Interface method? factory? Static class method?
-        return new TModel(config, device, torchDevice);
-        */
-
-        // PLACEHOLDER
-        return (TModel)(new SNAC((SNACConfig)config, torchDevice) as INeuralCodec);
-    }
-
-    public async Task<ModelInfo?> GetRemoteModelInfo(string source)
+    public event EventHandler<ModelLoadProgressEventArgs> OnProgress;
+    public void ClearCache(string? modelId = null)
     {
         try
         {
-            var metadata = await _hubLoader.GetRepositoryMetadata(source);
-            var cachedPath = Cache.GetCachedModel(source);
+            _cache.ClearCache(modelId);
+        }
+        catch (Exception ex)
+        {
+            OnError?.Invoke(this, new ModelLoadErrorEventArgs(
+                modelId ?? "all models",
+                new ModelLoadException("Failed to clear cache", ex)));
+        }
+    }
 
-            ModelConfig? config = null;
-            if (cachedPath != null)
+    public string GetDefaultCacheDirectory()
+    {
+        return _cache.GetDefaultCacheDirectory();
+    }
+
+    public async Task<ModelInfo?> GetModelInfo(string source)
+    {
+        try
+        {
+            if (IsLocalPath(source))
             {
-                var configPath = Path.ChangeExtension(cachedPath, ".json");
-                if (File.Exists(configPath))
+                return await GetLocalModelInfo(source);
+            }
+            else
+            {
+                return await GetRemoteModelInfo(source);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnError?.Invoke(this, new ModelLoadErrorEventArgs(source, ex));
+            return null;
+        }
+    }
+
+    public bool IsLocalPath(string source) =>
+        source.Contains(Path.DirectorySeparatorChar) ||
+        source.Contains(Path.AltDirectorySeparatorChar) ||
+        File.Exists(source);
+
+    public async Task<TModel> LoadModelAsync<TModel, TConfig>(
+        string path,
+        TConfig? config = default,
+        ModelLoadOptions? options = null)
+        where TModel : class, INeuralCodec
+        where TConfig : class, IModelConfig
+    {
+        options ??= new ModelLoadOptions
+        {
+            Device = config?.Device,
+            ValidateModel = config is null
+        };
+
+        if (IsLocalPath(path))
+        {
+            return await LoadLocalModel<TModel, TConfig>(path, options);
+        }
+        else
+        {
+            return await LoadRemoteModel<TModel, TConfig>(path, options);
+        }
+    }
+
+    public async Task<TModel> LoadModelAsync<TModel, TConfig>(
+        string path,
+        Func<IModelConfig, TModel> modelFactory,
+        TConfig config,
+        ModelLoadOptions? options = null)
+        where TModel : class, INeuralCodec
+        where TConfig : class, IModelConfig
+    {
+        try
+        {
+            var model = modelFactory(config);
+
+            await LoadWeights(model, path, options?.ValidateModel ?? false);
+
+            await Task.Run(() => model.LoadWeights(path));
+
+            if (_validators.TryGetValue(config.GetType(), out var validatorObj))
+            {
+                var validator = validatorObj as IModelValidator<TConfig>;
+                var validationResult = await validator.ValidateModel(model, config);
+
+                if (!validationResult.IsValid)
                 {
-                    config = await LoadConfig<ModelConfig>(configPath);
+                    throw new ModelLoadException(
+                        $"Model validation failed: {string.Join(", ", validationResult.Errors)}");
                 }
             }
 
-            var lastModified = metadata.LastModified;
-            var modelFile = metadata.Files.FirstOrDefault(f =>
-                Path.GetExtension(f.FullName) is ".bin" or ".pt" or ".pth");
+            return model;
+        }
+        catch (Exception ex)
+        {
+            OnError?.Invoke(this, new ModelLoadErrorEventArgs(path, ex));
+            throw new ModelLoadException($"Failed to load model using custom factory: {path}", ex);
+        }
+    }
 
-            var size = modelFile?.Size ?? 0;
+    public void RegisterValidator<TConfig>(IModelValidator<TConfig> validator)
+        where TConfig : IModelConfig
+    {
+        _validators[typeof(TConfig)] = validator;
+    }
+
+    private static torch.Device ConvertDevice(Core.Models.Device device)
+    {
+        if (device == null)
+            return torch.CPU;
+
+        return device.Type switch
+        {
+            DeviceType.CPU => torch.CPU,
+            DeviceType.CUDA => cuda.is_available() ?
+                torch.CUDA :
+                throw new InvalidOperationException("CUDA device requested but not available"),
+            _ => throw new ArgumentException($"Unsupported device type: {device.Type}")
+        };
+    }
+
+    private static ModelRegistry CreateDefaultRegistry()
+    {
+        var registry = new ModelRegistry();
+
+        registry.RegisterModel<SNAC, SNACConfig>((config) =>
+            new SNAC(config, ConvertDevice(config.Device)));
+
+        return registry;
+    }
+    private string GetConfigPath(string modelPath)
+    {
+        var configPath = Path.ChangeExtension(modelPath, ".json");
+        if (!File.Exists(configPath))
+        {
+            configPath = Path.Combine(
+                Path.GetDirectoryName(modelPath) ?? "",
+                "config.json");
+        }
+        return configPath;
+    }
+
+    private async Task<ModelInfo?> GetLocalModelInfo(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var fileInfo = new FileInfo(path);
+        return new ModelInfo
+        {
+            Source = path,
+            IsCached = false, // Local file isn't considered cached
+            LastModified = fileInfo.LastWriteTimeUtc,
+            Size = fileInfo.Length,
+            Backend = "Torch"
+        };
+    }
+
+    private async Task<ModelInfo?> GetRemoteModelInfo(string source)
+    {
+        try
+        {
+            // Get repository metadata from Hugging Face
+            var modelInfo = await _repository.GetModelInfo(source);
+            var cachedPath = await _cache.GetCachedPath(source, "main");
 
             return new ModelInfo
             {
                 Source = source,
-                Config = config,
                 IsCached = cachedPath != null,
-                LastModified = lastModified,
-                Author = metadata.Author,
-                Tags = metadata.Tags,
-                //Backend = BackendName,
-                Size = size,
+                LastModified = modelInfo.LastModified,
+                Author = modelInfo.Author,
+                Tags = modelInfo.Tags,
+                Backend = "Torch",
+                Size = modelInfo.Size
             };
         }
         catch (Exception ex)
@@ -134,297 +226,180 @@ public TModel CreateModel<TModel>(ModelConfig config, Core.Models.Device? device
         }
     }
 
-    public async Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec
+    private async Task<TConfig> LoadAndValidateConfig<TConfig>(string path, ModelLoadOptions options) where TConfig : IModelConfig
     {
-        if (!File.Exists(path))
-            throw new ModelLoadException($"Model file not found at {path}");
-
-        var configPath = Path.ChangeExtension(path, ".json");
-        if (!File.Exists(configPath))
-        {
-            configPath = Path.Combine(Path.GetDirectoryName(path) ?? "", "config.json");
-        }
-        if (!File.Exists(configPath) && options.HasConfigFile)
+        var configPath = GetConfigPath(path);
+        if (!File.Exists(configPath) && options.RequireConfig)
         {
             throw new ModelLoadException($"Config file not found at {configPath}");
         }
 
-        try
+        var config = await LoadConfig<TConfig>(configPath);
+
+        if (_validators.TryGetValue(config.GetType(), out var validatorObj))
         {
-            var config = await this.LoadConfig<ModelConfig>(configPath);
+            var validator = validatorObj as IModelValidator<IModelConfig>;
+            var configResult = validator.ValidateConfig(config); // todo
 
-            var model = CreateModel<TModel>(config, options.Device);
-
-            using (var scope = torch.NewDisposeScope())
+            if (!configResult.IsValid)
             {
-                // Load weights with timeout
-                using var cts = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(90));
-
-                await Task.Run(() =>
-                {
-                    model.LoadWeights(path);
-                    cts.Token.ThrowIfCancellationRequested();
-                }, cts.Token);
-            }
-
-            if (false && options.ValidateModel) //TODO
-            {
-                config.Validate();
-                await ValidateLoadedModel(model, path);
-            }
-
-            return model;
-        }
-        catch (OperationCanceledException)
-        {
-            throw new ModelLoadException($"Loading model timed out: {path}");
-        }
-        catch (Exception ex) when (ex is not ModelLoadException)
-        {
-            throw new ModelLoadException($"Failed to load model from {path}", ex);
-        }
-    }
-
-    public async Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec
-    {
-        var modelPath = !options.ForceReload
-            ? Cache.GetCachedModel(source, options.Revision)
-            : null;
-
-        if (modelPath == null)
-        {
-            try
-            {
-                // Download model files
-                var progress = new Progress<double>(p =>
-                    OnProgress?.Invoke(this, new ModelLoadProgressEventArgs(source, p)));
-
-                var files = await _hubLoader.DownloadSnapshot(
-                    source,
-                    Cache.GetModelCacheDir(source, options.Revision),
-                    allowedPatterns: new[] { "*.bin", "*.pt", "*.pth", "*.json" },
-                    progress: progress);
-
-                modelPath = files.FirstOrDefault(f =>
-                    Path.GetExtension(f) is ".bin" or ".pt" or ".pth")
-                    ?? throw new ModelLoadException("No model file found in download");
-
-                await ValidateDownload(files, modelPath);
-            }
-            catch (Exception ex)
-            {
-                Cache.ClearCache(source); // Clean up failed download
-                throw new ModelLoadException($"Failed to download model: {source}", ex);
-            }
-        }
-
-        return await LoadLocalModel<TModel>(modelPath, options);
-    }
-
-    protected void ValidateConfig(ModelConfig config)
-    {
-        switch (config)
-        {
-            case SNACConfig snacConfig:
-                //ValidateSNACConfig(snacConfig); Todo: Implement this
-                break;
-
-            default:
                 throw new ModelConfigException(
-                    $"Unsupported config type for TorchSharp: {config.GetType().Name}");
+                    $"Invalid model configuration: {string.Join(", ", configResult.Errors)}");
+            }
         }
+
+        return config;
     }
 
-    private static void LoadPyTorchWeights(SNAC model, string modelPath)
+    private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
     {
-        if (!File.Exists(modelPath))
-            throw new FileNotFoundException($"PyTorch weights not found at {modelPath}");
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        Converters = { new ModelConfigJsonConverter<IModelConfig>() }
+    };
 
-        try
-        {
-            model.load_py(modelPath);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to load PyTorch weights from {modelPath}", ex);
-        }
-    }
-
-    private static void LoadTorchSharpWeights(SNAC model, string modelPath)
-    {
-        if (!File.Exists(modelPath))
-            throw new FileNotFoundException($"TorchSharp weights not found at {modelPath}");
-
-        try
-        {
-            model.load(modelPath);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to load TorchSharp weights from {modelPath}", ex);
-        }
-    }
-
-    private static torch.Device ConvertDevice(Core.Models.Device? device)
-    {
-        if (device == null)
-            return torch.CPU;
-
-        return device.Type.ToLowerInvariant() switch
-        {
-            "cpu" => torch.CPU,
-            "cuda" => torch.CUDA,
-            _ => throw new ArgumentException($"Unsupported device type: {device.Type}")
-        };
-    }
-
-    private static Tensor CreateDummyInput(ModelConfig config, torch.Device device)
-    {
-        switch (config)
-        {
-            case SNACConfig snacConfig:
-                return torch.randn(1, 1, snacConfig.SamplingRate).to(device);
-
-            default:
-                throw new ArgumentException($"Unsupported config type: {config.GetType().Name}");
-        }
-    }
-
-    private static bool IsLocalPath(string source)
-    {
-        // Check if source looks like a file path
-        return source.Contains(Path.DirectorySeparatorChar) ||
-               source.Contains(Path.AltDirectorySeparatorChar) ||
-               File.Exists(source);
-    }
-
-    private static bool IsPyTorchModelFile(byte[] bytes)
-    {
-        // Check for PyTorch magic numbers/signatures
-        if (bytes.Length < 8) return false;
-
-        // Look for common PyTorch model signatures
-        return bytes[0] == 0x80 && bytes[1] == 0x02 || // Pickle protocol
-               (bytes[0] == 'P' && bytes[1] == 'K'); // ZIP archive
-    }
-
-    public async Task<T> LoadConfig<T>(string path) where T : ModelConfig
+    private async Task<TConfig> LoadConfig<TConfig>(string path) where TConfig : IModelConfig
     {
         try
         {
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Config file not found at {path}");
-            var json = await File.ReadAllTextAsync(path);
-            //var options = new JsonSerializerOptions
-            //{
-            //    PropertyNameCaseInsensitive = true,
-            //    ReadCommentHandling = JsonCommentHandling.Skip
-            //};
 
-            var config = JsonSerializer.Deserialize<SNACConfig>(json)
+            var json = await File.ReadAllTextAsync(path);
+            var config = JsonSerializer.Deserialize<TConfig>(json, _jsonSerializerOptions)
                 ?? throw new ModelLoadException("Failed to deserialize config");
 
-            //ValidateConfig(config);
-            return config as T;
+            return config;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ModelLoadException)
         {
-            Debug.WriteLine(ex);
             throw new ModelLoadException($"Failed to load config from {path}", ex);
         }
     }
+    //private async Task<TConfig> LoadConfig<TConfig>(string path) where TConfig : IModelConfig
+    //{
+    //    try
+    //    {
+    //        if (!File.Exists(path))
+    //            throw new FileNotFoundException($"Config file not found at {path}");
 
-    private async Task ValidateDownload(IEnumerable<string> files, string modelPath)
+    //        var json = await File.ReadAllTextAsync(path);
+    //        var options = new JsonSerializerOptions
+    //        {
+    //            PropertyNameCaseInsensitive = true,
+    //            ReadCommentHandling = JsonCommentHandling.Skip,
+    //            Converters = { new ModelConfigJsonConverter<TConfig>() }
+    //        };
+
+    //        var config = JsonSerializer.Deserialize<TConfig>(json, options)
+    //            ?? throw new ModelLoadException("Failed to deserialize config");
+
+    //        return config;
+    //    }
+    //    catch (Exception ex) when (ex is not ModelLoadException)
+    //    {
+    //        throw new ModelLoadException($"Failed to load config from {path}", ex);
+    //    }
+    //}
+
+    private async Task<TModel> LoadLocalModel<TModel, TConfig>(
+                            string path, ModelLoadOptions options)
+        where TModel : class, INeuralCodec
+        where TConfig : class, IModelConfig
     {
-        // Verify all required files exist
-        var configPath = Path.ChangeExtension(modelPath, ".json");
-        if (!File.Exists(configPath))
-            throw new ModelLoadException("Config file missing from download");
+        if (!File.Exists(path))
+            throw new ModelLoadException($"Model file not found at {path}");
 
-        // Verify model file size
-        var modelInfo = new FileInfo(modelPath);
-        if (modelInfo.Length < 1000) // Arbitrary minimum size
-            throw new ModelLoadException("Model file appears to be invalid (too small)");
-
-        // Load and validate config
-        var config = await LoadConfig<ModelConfig>(configPath);
-        ValidateConfig(config);
-
-        // Verify model file format
         try
         {
-            var modelBytes = await File.ReadAllBytesAsync(modelPath);
-            if (!IsPyTorchModelFile(modelBytes))
-                throw new ModelLoadException("Invalid PyTorch model file format");
+            var config = await LoadAndValidateConfig<TConfig>(path, options);
+            var model = _registry.CreateModel<TModel, TConfig>(config);
+
+            await LoadWeights(model, path, options.ValidateModel);
+
+            return (TModel)model;
         }
         catch (Exception ex)
         {
-            throw new ModelLoadException("Failed to validate model file", ex);
+            OnError?.Invoke(this, new ModelLoadErrorEventArgs(path, ex));
+            throw new ModelLoadException($"Failed to load model from {path}", ex);
         }
     }
 
-    private async Task ValidateLoadedModel(INeuralCodec model, string path)
+    private async Task<TModel> LoadRemoteModel<TModel, TConfig>(
+        string source, ModelLoadOptions options)
+        where TModel : class, INeuralCodec
+        where TConfig : class, IModelConfig
     {
         try
         {
-            if (!ValidateModel(model))
-                throw new ModelLoadException("Model failed basic validation");
+            var modelPath = !options.ForceReload
+                ? await _cache.GetCachedPath(source, options.Revision)
+                : null;
 
-            // Test inference with dummy input
-            //var dummy = CreateDummyInput(model.Config, model.Device);
-            //await Task.Run(() => model.Forward(dummy));
+            if (modelPath == null)
+            {
+                // path of the model file in the repository
+                var repoModelPath = await _repository.GetModelPath(source, options.Revision);
+
+                var tempDir = Path.Combine(Path.GetTempPath(), $"neural_codecs_{Guid.NewGuid()}");
+                Directory.CreateDirectory(tempDir);
+
+                try
+                {
+                    var progress = new Progress<double>(p =>
+                        OnProgress?.Invoke(this, new ModelLoadProgressEventArgs(source, p)));
+
+                    await _repository.DownloadModel(source, tempDir, progress);
+
+                    modelPath = await _cache.CacheModel(
+                        source,
+                        Path.Combine(tempDir, repoModelPath),
+                        options.Revision);
+                }
+                finally
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        try
+                        {
+                            Directory.Delete(tempDir, recursive: true);
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            return await LoadLocalModel<TModel, TConfig>(modelPath, options);
         }
         catch (Exception ex)
         {
-            throw new ModelLoadException($"Model validation failed for {path}", ex);
+            _cache.ClearCache(source); // Clean up failed download
+            OnError?.Invoke(this, new ModelLoadErrorEventArgs(source, ex));
+            throw new ModelLoadException($"Failed to load remote model: {source}", ex);
         }
     }
 
-    private bool ValidateModel(INeuralCodec model)
+    private async Task LoadWeights(INeuralCodec model, string path, bool validate)
     {
-        throw new NotImplementedException();
-    }
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
-    public void ClearCache()
-    {
-        throw new NotImplementedException();
-    }
+        await Task.Run(() =>
+        {
+            model.LoadWeights(path);
+            cts.Token.ThrowIfCancellationRequested();
+        }, cts.Token);
 
-    public string GetDefaultCacheDirectory()
-    {
-        throw new NotImplementedException();
-    }
+        if (validate && _validators.TryGetValue(model.Config.GetType(), out var validatorObj))
+        {
+            var validator = validatorObj as IModelValidator<IModelConfig>;
+            var validationResult = await validator.ValidateModel(model, model.Config);
 
-    public Task<TModel> LoadHuggingFaceModel<TModel>(string repoId, ModelLoadOptions options) where TModel : INeuralCodec
-    {
-        throw new NotImplementedException();
+            if (!validationResult.IsValid)
+            {
+                throw new ModelLoadException(
+                    $"Model validation failed: {string.Join(", ", validationResult.Errors)}");
+            }
+        }
     }
-
-    public Task<TModel> LoadModel<TModel>(string source, ModelLoadOptions? options = null) where TModel : INeuralCodec
-    {
-        throw new NotImplementedException();
-    }
-
-    public void SaveModel<TModel>(TModel model, string path) where TModel : INeuralCodec
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<ModelInfo?> GetModelInfo(string source)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void SaveConfig(ModelConfig config, string path)
-    {
-        throw new NotImplementedException();
-    }
-
-    void IModelLoader.ValidateConfig(ModelConfig config)
-    {
-        throw new NotImplementedException();
-    }
-
-    #endregion Methods
 }

@@ -1,5 +1,4 @@
 ﻿using NeuralCodecs.Core.Interfaces;
-using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.PyBridge;
@@ -14,134 +13,61 @@ namespace NeuralCodecs.Torch;
 /// </summary>
 public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, INeuralCodec
 {
-    private readonly int samplingRate;
-    private readonly int encoderDim;
-    private readonly int[] encoderRates;
-
-    private readonly int decoderDim;
-    private readonly int[] decoderRates;
-    private readonly int latentDim;
-    private readonly int? attnWindowSize;
-    private readonly int numCodebooks;
-    private readonly int codebookSize;
-    private readonly int codebookDim;
-    private readonly int[] vqStrides;
-    private readonly int hopLength;
+    private readonly int _hopLength;
 
     private readonly Encoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
     private readonly Decoder decoder;
 
-    public ModelConfig Config { get; set; }
+    private SNACConfig _config;
+    public IModelConfig Config => _config;
 
-    public string Architecture => "Torch";
 
-    public Core.Models.Device Device { get; set; }
-
-    public SNAC(
-        int samplingRate = 44100,
-        int encoderDim = 64,
-        int[] encoderRates = null,
-        int? latentDim = null,
-        int decoderDim = 1536,
-        int[] decoderRates = null,
-        int? attnWindowSize = 32,
-        int codebookSize = 4096,
-        int codebookDim = 8,
-        int[] vqStrides = null,
-        bool noise = true,
-        bool depthwise = true) : base("SNAC")
+    public SNAC(SNACConfig config, torch.Device device) : base("SNAC")
     {
-        this.samplingRate = samplingRate;
-        this.encoderDim = encoderDim;
-        this.encoderRates = encoderRates ?? [3, 3, 7, 7];
-        this.decoderDim = decoderDim;
-        this.decoderRates = decoderRates ?? [7, 7, 3, 3];
-        this.latentDim = latentDim ?? encoderDim * (1 << this.encoderRates.Length);
-        this.hopLength = this.encoderRates.Aggregate((a, b) => a * b);
-        encoder = new Encoder(
-            encoderDim,
-            this.encoderRates,
-            depthwise,
-            attnWindowSize);
-
-        this.vqStrides = vqStrides ?? [8, 4, 2, 1];
-        this.numCodebooks = vqStrides?.Length ?? 4;
-        this.codebookSize = codebookSize;
-        this.codebookDim = codebookDim;
-
-        this.attnWindowSize = attnWindowSize;
-
-        quantizer = new ResidualVectorQuantizer(
-            this.latentDim,
-            codebookSize,
-            codebookDim,
-            this.vqStrides);
-
-        decoder = new Decoder(
-            this.latentDim,
-            decoderDim,
-            this.decoderRates,
-            noise,
-            depthwise,
-            attnWindowSize);
-        RegisterComponents();
-    }
-
-    public SNAC(SNACConfig config, torch.Device? device = null) : base("SNAC")
-    {
-        this.samplingRate = config.SamplingRate;
-        this.encoderDim = config.EncoderDim;
-        this.encoderRates = config.EncoderRates;
-        this.decoderDim = config.DecoderDim;
-        this.decoderRates = config.DecoderRates;
-        this.latentDim = config.LatentDim ?? config.EncoderDim * (1 << config.EncoderRates.Length);
-        this.hopLength = config.EncoderRates.Aggregate((a, b) => a * b);
+        _config = config;
+        _config.LatentDim = config.LatentDim ?? config.EncoderDim * (1 << config.EncoderRates.Length);
+        _hopLength = config.EncoderRates.Aggregate((a, b) => a * b);
 
         encoder = new Encoder(
-            config.EncoderDim,
-            config.EncoderRates,
-            config.Depthwise,
-            config.AttnWindowSize);
-
-        this.vqStrides = config.VQStrides;
-        this.numCodebooks = config.VQStrides.Length;
-        this.codebookSize = config.CodebookSize;
-        this.codebookDim = config.CodebookDim;
-        this.attnWindowSize = config.AttnWindowSize;
+            _config.EncoderDim,
+            _config.EncoderRates,
+            _config.Depthwise,
+            _config.AttnWindowSize);
 
         quantizer = new ResidualVectorQuantizer(
-            this.latentDim,
-            config.CodebookSize,
-            config.CodebookDim,
-            config.VQStrides);
+            _config.LatentDim.Value,
+            _config.CodebookSize,
+            _config.CodebookDim,
+            _config.VQStrides);
 
         decoder = new Decoder(
-            this.latentDim,
-            config.DecoderDim,
-            config.DecoderRates,
-            config.Noise,
-            config.Depthwise,
-            config.AttnWindowSize);
+            _config.LatentDim.Value,
+            _config.DecoderDim,
+            _config.DecoderRates,
+            _config.Noise,
+            _config.Depthwise,
+            _config.AttnWindowSize);
 
         RegisterComponents();
 
-        //if (config.Device != null)
-        //{
-        //    this.to(device);
-        //}
+        if (device != null)
+        {
+            this.to(device);
+        }
     }
-        /// <summary>
-        /// Preprocessing method for input audio
-        /// </summary>
-        /// <param name="audioData">Raw audio tensor</param>
-        /// <returns>Padded and normalized audio tensor</returns>
-        private Tensor Preprocess(Tensor audioData)
+
+    /// <summary>
+    /// Preprocessing method for input audio
+    /// </summary>
+    /// <param name="audioData">Raw audio tensor</param>
+    /// <returns>Padded and normalized audio tensor</returns>
+    private Tensor Preprocess(Tensor audioData)
     {
         var length = audioData.size(-1);
 
-        long lcm = MathUtils.LCM(vqStrides[0], this.attnWindowSize ?? 1);
-        long padTo = hopLength * lcm;
+        long lcm = MathUtils.LCM(_config.VQStrides[0], _config.AttnWindowSize ?? 1);
+        long padTo = _hopLength * lcm;
 
         long rightPad = (long)(Math.Ceiling((double)length / padTo) * padTo) - length;
 
@@ -209,9 +135,4 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
             throw new InvalidOperationException($"Failed to load PyTorch weights from {path}", ex);
         }
     }
-
-    //T2 INeuralCodec.Encode<T1, T2>(T1 input)
-    //{
-    //    throw new NotImplementedException();
-    //}
 }

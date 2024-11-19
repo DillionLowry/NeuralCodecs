@@ -34,6 +34,7 @@
     <Compile Remove="Interfaces\IMultiScaleCodec.cs" />
     <Compile Remove="Interfaces\IQuantizer.cs" />
     <Compile Remove="Interfaces\IResidualVectorQuantizer.cs" />
+    <Compile Remove="NeuralCodecs.cs" />
     <Compile Remove="Utils\ModelLoader.cs" />
   </ItemGroup>
 	<ItemGroup>
@@ -46,18 +47,21 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <Compile Include="Loading\CachedFile.cs" />
-	  <Compile Include="Loading\CacheManager.cs" />
 	  <Compile Include="Loading\CacheMetadata.cs" />
-	  <Compile Include="Loading\HuggingFaceLoader.cs" />
-	  <Compile Include="Loading\ModelConfig.cs" />
+	  <Compile Include="Loading\HuggingFaceRepository.cs" />
+	  <Compile Include="Loading\ModelConfigJsonConverter.cs" />
 	  <Compile Include="Loading\ModelLoadErrorEventArgs.cs" />
 	  <Compile Include="Loading\ModelLoadOptions.cs" />
 	  <Compile Include="Loading\ModelLoadProgressEventArgs.cs" />
 	  <Compile Include="Loading\ModelLoadWarningEventArgs.cs" />
+	  <Compile Include="Loading\ModelRegistry.cs" />
+	  <Compile Include="Loading\ValidationResult.cs" />
 	  <Compile Include="Loading\WildcardPattern.cs" />
 	  <Compile Include="Models\CodecOperation.cs" />
+	  <Compile Include="Models\DefaultModelCache.cs" />
 	  <Compile Include="Models\Device.cs" />
 	  <Compile Include="Models\ModelInfo.cs" />
+	  <Compile Include="Models\ModelOperationResult.cs" />
 	  <Compile Include="Models\RepoFile.cs" />
 	  <Compile Include="Models\RepoMetadata.cs" />
 	</ItemGroup>

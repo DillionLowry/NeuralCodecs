@@ -11,6 +11,7 @@ namespace NeuralCodecs.Core.Loading
         private readonly string _cacheRoot;
         private const string DEFAULT_CACHE_DIR = ".cache/neural_codecs";
         private static readonly SemaphoreSlim _cacheLock = new(1);
+        private static readonly string[] allowedPatterns = new[] { "*.bin", "*.json" };
 
         public CacheManager(string? cacheRoot = null)
         {
@@ -74,7 +75,7 @@ namespace NeuralCodecs.Core.Loading
                 var files = await loader.DownloadSnapshot(
                     modelId,
                     cacheDir,
-                    allowedPatterns: new[] { "*.bin", "*.json" },
+                    allowedPatterns: allowedPatterns,
                     progress: progress,
                     ct: ct);
 
