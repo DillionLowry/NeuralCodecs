@@ -1,4 +1,4 @@
-using NeuralCodecs.Core.Models;
+using NeuralCodecs.Core.Configuration;
 
 namespace NeuralCodecs.Core.Loading
 {
@@ -10,7 +10,7 @@ namespace NeuralCodecs.Core.Loading
         /// <summary>
         /// Target device for the model. Defaults to CPU.
         /// </summary>
-        public Device? Device { get; init; }
+        public DeviceConfiguration? Device { get; init; }
 
         /// <summary>
         /// Model revision/tag to load. Defaults to "main".
