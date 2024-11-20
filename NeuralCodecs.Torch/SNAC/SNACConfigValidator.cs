@@ -1,12 +1,8 @@
-﻿using NeuralCodecs.Core.Interfaces;
-using NeuralCodecs.Core.Loading;
+﻿using NeuralCodecs.Core;
 using NeuralCodecs.Core.Utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using NeuralCodecs.Core.Validation;
 using TorchSharp;
+using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
 namespace NeuralCodecs.Torch
 {
@@ -70,7 +66,7 @@ namespace NeuralCodecs.Torch
                 var sampleLength = (int)(config.SamplingRate * 0.1);
                 var input = torch.randn(1, 1, sampleLength);
 
-                if (config.Device?.Type is Core.Models.DeviceType.CUDA)
+                if (config.Device?.Type is DeviceType.CUDA)
                 {
                     input = input.cuda();
                 }

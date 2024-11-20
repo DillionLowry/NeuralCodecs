@@ -1,9 +1,11 @@
-﻿using NeuralCodecs.Core.Interfaces;
+﻿using NeuralCodecs.Core;
+using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.PyBridge;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
+using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
 namespace NeuralCodecs.Torch;
 
@@ -21,7 +23,6 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
     private SNACConfig _config;
     public IModelConfig Config => _config;
-
 
     public SNAC(SNACConfig config, torch.Device device) : base("SNAC")
     {
@@ -88,7 +89,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
     public override (Tensor audio, List<Tensor> codes) forward(Tensor audioData)
     {
         using var scope = NewDisposeScope();
-        var length = audioData.shape[-1];
+        var length = audioData.shape[^1];
         audioData = Preprocess(audioData);
 
         var z = encoder.forward(audioData);
@@ -119,7 +120,18 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         return audio.MoveToOuterDisposeScope();
     }
+    //public float[] Decode(List<Tensor> codes)
+    //{
+    //    using var scope = torch.NewDisposeScope();
 
+    //    var zQ = quantizer.FromCodes(codes);
+    //    var audio = decoder.forward(zQ);
+
+    //    return audio.cpu()
+    //                .detach()
+    //                .data<float>()
+    //                .ToArray();
+    //}
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
@@ -134,5 +146,71 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         {
             throw new InvalidOperationException($"Failed to load PyTorch weights from {path}", ex);
         }
+    }
+
+    public float[] ProcessAudio(float[] audioData, int sampleRate)
+    {
+        if (audioData == null || audioData.Length == 0)
+            throw new ArgumentException("Audio data cannot be empty", nameof(audioData));
+
+        using var scope = torch.NewDisposeScope();
+
+        // Resample if needed
+        if (sampleRate != _config.SamplingRate)
+        {
+            audioData = ResampleAudio(audioData, sampleRate, _config.SamplingRate);
+        }
+
+        // Convert to tensor with correct shape
+        var inputTensor = torch.tensor(audioData, dtype: float32)
+                              .reshape(1, 1, -1)
+                              .to(this.GetDevice());
+
+        // Process through model
+        using (torch.inference_mode())
+        {
+            var (outputTensor, _) = this.forward(inputTensor.MoveToOuterDisposeScope());
+            return outputTensor.cpu()
+                             .detach()
+                             .data<float>()
+                             .ToArray();
+        }
+    }
+
+    private torch.Device GetDevice()
+    {
+        return _config.Device?.Type switch
+        {
+            DeviceType.CPU => torch.CPU,
+            DeviceType.CUDA when cuda.is_available() => torch.CUDA,
+            DeviceType.CUDA => throw new InvalidOperationException("CUDA requested but not available"),
+            _ => torch.CPU
+        };
+    }
+
+    private static float[] ResampleAudio(float[] input, int sourceSampleRate, int targetSampleRate)
+    {
+        var ratio = (double)targetSampleRate / sourceSampleRate;
+        var outputLength = (int)(input.Length * ratio);
+        var output = new float[outputLength];
+
+        for (int i = 0; i < outputLength; i++)
+        {
+            var position = i / ratio;
+            var index = (int)position;
+            var fraction = position - index;
+
+            if (index >= input.Length - 1)
+            {
+                output[i] = input[input.Length - 1];
+            }
+            else
+            {
+                output[i] = (float)((1 - fraction) * input[index] +
+                           (fraction * input[index + 1]));
+            }
+        }
+
+        return output;
     }
 }

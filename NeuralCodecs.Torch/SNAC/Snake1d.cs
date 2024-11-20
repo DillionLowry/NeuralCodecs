@@ -1,4 +1,3 @@
-using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
@@ -70,7 +69,7 @@ public partial class SNAC
                 torch.cuda.synchronize();
                 return result;
             }
-        }   
+        }
 
         /// <summary>
         /// Performs forward pass of Snake activation: x + (1/α) * sin²(αx)
