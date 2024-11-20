@@ -1,18 +1,21 @@
 ﻿using NeuralCodecs.Core.Loading;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NeuralCodecs.Torch
 {
+    /// <summary>
+    /// Provides methods for creating and loading neural network models using Torch.
+    /// </summary>
     public static partial class NeuralCodecs
     {
+        /// <summary>
+        /// Creates an instance of TorchModelLoader.
+        /// </summary>
+        /// <returns>A new instance of TorchModelLoader.</returns>
         public static TorchModelLoader CreateTorchLoader()
         {
             return new TorchModelLoader();
         }
+
         /// <summary>
         /// Asynchronously creates an instance of SNAC using the specified path, configuration, and options.
         /// </summary>
