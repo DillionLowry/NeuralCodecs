@@ -28,4 +28,15 @@ internal static class Extensions
     {
         return collection == null || collection.Count == 0;
     }
+
+    public static async Task CopyToAsync(this Stream source, Stream destination, IProgress<long> progress, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        int bytesRead;
+        while ((bytesRead = await source.ReadAsync(buffer, cancellationToken)) != 0)
+        {
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            progress?.Report(bytesRead);
+        }
+    }
 }
