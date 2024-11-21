@@ -9,8 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <PackageReference Include="TorchAudio" Version="0.103.1" />
-    <PackageReference Include="TorchSharp-cuda-windows" Version="0.103.1" />
+	<PackageReference Include="TorchSharp-cuda-windows" Version="0.103.1" />
   </ItemGroup>
 
   <ItemGroup>

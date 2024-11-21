@@ -1,11 +1,5 @@
 ﻿using NAudio.Wave;
 
-using System.Globalization;
-using TorchSharp;
-using NeuralCodecs.Torch;
-using static TorchSharp.torch;
-
-
 namespace NeuralCodecs.Torch.Examples
 {
     internal class Program
@@ -15,8 +9,8 @@ namespace NeuralCodecs.Torch.Examples
             string modelPath, inputAudioPath, outputAudioPath;
             if (args.Length < 3)
             {
-                modelPath = @"T:\Models\SNAC\snac_24khz\pytorch_model.bin";
-                inputAudioPath = @"C:\Users\Main\source\repos\SNACSharp\SNACSharp.Example\en_sample.wav";
+                modelPath = "hubertsiuzdak/snac_24khz"; // Download from huggingface
+                inputAudioPath = "Your/audio/here";
                 outputAudioPath = "output.wav";
             }
             else
@@ -28,7 +22,7 @@ namespace NeuralCodecs.Torch.Examples
 
             try
             {
-                await EncodeDecodeAudio("hubertsiuzdak/snac_24khz", inputAudioPath, outputAudioPath);
+                await EncodeDecodeAudio(modelPath, inputAudioPath, outputAudioPath);
             }
             catch (Exception ex)
             {
@@ -65,20 +59,25 @@ namespace NeuralCodecs.Torch.Examples
                 }
                 buffer = monoBuffer;
             }
+
             //Process audio
             Console.WriteLine("Processing audio...");
             var processedAudio = model.ProcessAudio(
                 [.. buffer],
                 audioFile.WaveFormat.SampleRate
             );
-            //Console.WriteLine("Encoding audio...");
-            //var codes = model.Encode(buffer.ToArray());
-            //Console.WriteLine("Decoding audio...");
-            //var processedAudio = model.Decode(codes);
+
+            /* Or:
+            Console.WriteLine("Encoding audio...");
+            var codes = model.Encode(buffer.ToArray());
+
+            Console.WriteLine("Decoding audio...");
+            var processedAudio = model.Decode(codes);
+            */
 
             // Save output
-            Console.WriteLine("Saving output...");  
-            using var writer = new WaveFileWriter(
+            Console.WriteLine("Saving output...");
+            await using var writer = new WaveFileWriter(
                 outputPath,
                 new WaveFormat(model.Config.SamplingRate, 1)
             );

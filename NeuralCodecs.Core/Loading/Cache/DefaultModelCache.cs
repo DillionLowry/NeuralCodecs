@@ -1,11 +1,10 @@
 ﻿using NeuralCodecs.Core.Exceptions;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace NeuralCodecs.Core.Loading.Cache
 {
     /// <summary>
-    /// Provides default implementation for model caching functionality.
+    /// Default implementation of the IModelCache interface for managing neural network model caching.
     /// Manages the local storage and retrieval of downloaded models with validation and cleanup capabilities.
     /// </summary>
     public class DefaultModelCache : IModelCache
@@ -13,14 +12,26 @@ namespace NeuralCodecs.Core.Loading.Cache
         private readonly string _cacheRoot;
         private static readonly SemaphoreSlim _cacheLock = new(1);
 
+        /// <summary>
+        /// Initializes a new instance of the DefaultModelCache class.
+        /// </summary>
+        /// <param name="cacheRoot">Optional custom cache directory path. If not specified, uses the default cache location.</param>
         public DefaultModelCache(string? cacheRoot = null)
         {
             _cacheRoot = cacheRoot ?? GetDefaultCacheDirectory();
             Directory.CreateDirectory(_cacheRoot);
         }
 
+        /// <summary>
+        /// Gets the current cache directory path.
+        /// </summary>
+        /// <returns>The absolute path to the cache directory.</returns>
         public string GetCacheDirectory() => _cacheRoot;
 
+        /// <summary>
+        /// Gets the default cache directory path in the user's home folder.
+        /// </summary>
+        /// <returns>The default cache directory path.</returns>
         public string GetDefaultCacheDirectory()
         {
             return Path.Combine(
@@ -28,6 +39,12 @@ namespace NeuralCodecs.Core.Loading.Cache
                 ".cache", "neural_codecs", "torch");
         }
 
+        /// <summary>
+        /// Attempts to retrieve a cached model path for the specified model ID and revision.
+        /// </summary>
+        /// <param name="modelId">The unique identifier of the model.</param>
+        /// <param name="revision">The specific revision of the model.</param>
+        /// <returns>The path to the cached model if found and valid; otherwise, null.</returns>
         public async Task<string?> GetCachedPath(string modelId, string revision)
         {
             var modelDir = GetModelCacheDir(modelId, revision);
@@ -49,6 +66,18 @@ namespace NeuralCodecs.Core.Loading.Cache
             return null;
         }
 
+        /// <summary>
+        /// Caches a model and its configuration files in the local cache directory.
+        /// </summary>
+        /// <param name="modelId">The unique identifier of the model.</param>
+        /// <param name="sourcePath">The source directory containing the model files.</param>
+        /// <param name="revision">The specific revision of the model.</param>
+        /// <param name="targetFileName">The name of the model file to cache.</param>
+        /// <param name="targetConfigFileName">The name of the configuration file to cache.</param>
+        /// <param name="additionalMetadata">Optional additional metadata to store with the cached model.</param>
+        /// <returns>The path to the cached model file.</returns>
+        /// <exception cref="CacheException">Thrown when caching operations fail.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when source files are not found.</exception>
         public async Task<string> CacheModel(
             string modelId,
             string sourcePath,
@@ -86,8 +115,7 @@ namespace NeuralCodecs.Core.Loading.Cache
                 {
                     await source.CopyToAsync(targetConfig);
                 }
-                //File.Copy(sourcePath, targetPath);
-                //File.Copy(sourcePath, targetPath);
+
                 await CreateCacheMetadata(targetDir, modelId, revision, sourcePath);
 
                 return targetPath;
@@ -106,6 +134,12 @@ namespace NeuralCodecs.Core.Loading.Cache
                 _cacheLock.Release();
             }
         }
+
+        /// <summary>
+        /// Clears the model cache, either completely or for a specific model.
+        /// </summary>
+        /// <param name="modelId">Optional model ID to clear specific model cache. If null, clears entire cache.</param>
+        /// <exception cref="LoadException">Thrown when cache clearing operations fail.</exception>
         public void ClearCache(string? modelId = null)
         {
             try
@@ -185,7 +219,6 @@ namespace NeuralCodecs.Core.Loading.Cache
                 {
                     Path = fileName
                 }).ToList()
-                    
             };
 
             var metaPath = Path.Combine(cacheDir, "cache_meta.json");

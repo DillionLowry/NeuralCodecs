@@ -15,7 +15,12 @@ namespace NeuralCodecs.Core.Loading.Repository
         private const string REPO_BASE = "https://huggingface.co";
         private const int DEFAULT_TIMEOUT_SECONDS = 300;
         private readonly string[] _allowedFilePatterns = new[] { "*.bin", "*.pt", "*.pth", "*.json" };
+        private bool disposedValue;
 
+        /// <summary>
+        /// Initializes a new instance of the HuggingFaceRepository class.
+        /// </summary>
+        /// <param name="authToken">Optional authentication token for accessing private repositories.</param>
         public HuggingFaceRepository(string? authToken = null)
         {
             _client = CreateHttpClient(authToken);
@@ -40,6 +45,13 @@ namespace NeuralCodecs.Core.Loading.Repository
             return client;
         }
 
+        /// <summary>
+        /// Retrieves the path of the main model file from the specified repository.
+        /// </summary>
+        /// <param name="modelId">The Hugging Face model identifier.</param>
+        /// <param name="revision">The repository revision or branch name.</param>
+        /// <returns>The path to the main model file within the repository.</returns>
+        /// <exception cref="LoadException">Thrown when the model file cannot be found or accessed.</exception>
         public async Task<string> GetModelPath(string modelId, string revision)
         {
             try
@@ -61,6 +73,12 @@ namespace NeuralCodecs.Core.Loading.Repository
             }
         }
 
+        /// <summary>
+        /// Retrieves metadata information about a model from the repository.
+        /// </summary>
+        /// <param name="modelId">The Hugging Face model identifier.</param>
+        /// <returns>A ModelMetadata object containing information about the model.</returns>
+        /// <exception cref="LoadException">Thrown when the model information cannot be retrieved.</exception>
         public async Task<ModelMetadata> GetModelInfo(string modelId)
         {
             try
@@ -106,7 +124,14 @@ namespace NeuralCodecs.Core.Loading.Repository
                 throw new LoadException($"Failed to get model info for {modelId}", ex);
             }
         }
-        // TODO: FIX, ADD RESULT
+
+        /// <summary>
+        /// Downloads a model and its associated files from the repository.
+        /// </summary>
+        /// <param name="modelId">The Hugging Face model identifier.</param>
+        /// <param name="targetPath">The local directory path where the model should be downloaded.</param>
+        /// <param name="progress">An IProgress object to report download progress.</param>
+        /// <exception cref="LoadException">Thrown when the download fails or validation errors occur.</exception>
         public async Task DownloadModel(string modelId, string targetPath, IProgress<double> progress)
         {
 
@@ -323,9 +348,22 @@ namespace NeuralCodecs.Core.Loading.Repository
                    bytes[0] == 'P' && bytes[1] == 'K';     // ZIP archive
         }
 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    _client.Dispose();
+                }
+                disposedValue = true;
+            }
+        }
+        
         public void Dispose()
         {
-            _client.Dispose();
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
         }
     }
 }
