@@ -1,4 +1,4 @@
-# NeuralCodecs [![NuGet Version](https://img.shields.io/nuget/v/%20NeuralCodecs.svg?style=flat)](https://www.nuget.org/packages/NeuralCodecs)
+# NeuralCodecs [![NuGet Version](https://img.shields.io/nuget/v/NeuralCodecs?style=flat)](https://www.nuget.org/packages/NeuralCodecs)
 
 NeuralCodecs is a .NET library for neural audio codec implementations, designed for efficient audio compression and reconstruction.
 
