@@ -7,6 +7,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NeuralCodecs.Core", "Neural
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeuralCodecs.Torch", "NeuralCodecs.Torch\NeuralCodecs.Torch.csproj", "{3549FA01-CD21-4465-8816-A2BEAAE391D7}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8CD219C6-C9AD-4C84-B0B8-487298C20CD1}"
+	ProjectSection(SolutionItems) = preProject
+		LICENSE.txt = LICENSE.txt
+		README.md = README.md
+		THIRD-PARTY-NOTICES.TXT = THIRD-PARTY-NOTICES.TXT
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NeuralCodecs.Torch.Examples", "NeuralCodecs.Torch.Examples\NeuralCodecs.Torch.Examples.csproj", "{BE93E11F-D3AA-45DA-928A-A24393688D15}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +30,10 @@ Global
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

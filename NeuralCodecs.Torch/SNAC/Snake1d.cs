@@ -1,9 +1,9 @@
-using NeuralCodecs.Torch.Utils;
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch.SNAC;
+namespace NeuralCodecs.Torch;
 
 public partial class SNAC
 {
@@ -39,6 +39,11 @@ public partial class SNAC
         /// <param name="channels">Number of input channels</param>
         public Snake1d(long channels) : base("Snake1d")
         {
+            if (channels <= 0)
+            {
+                throw new ArgumentException("Channels must be positive", nameof(channels));
+            }
+
             alpha = Parameter(ones(1, channels, 1, dtype: float32));
             RegisterComponents();
         }
@@ -55,24 +60,13 @@ public partial class SNAC
         {
             if (UseGPU)
             {
-                // On GPU, force stream synchronization for consistent results
-                cuda.synchronize();
-
-                // Ensure computation happens in a single kernel if possible
-                //using var _ = torch.cuda.
-                return sin(x).to(float32, non_blocking: false);
+                torch.cuda.synchronize();
+                return torch.sin(x).to(torch.float32, non_blocking: false);
             }
             else
             {
-                // On CPU, try to match PyTorch's precision pattern
-                var result = sin(x);
-
-                // Force exact float32 precision
-                result = result.to(float32);
-
-                // Optional: Add memory fence to ensure operation order
-                cuda.synchronize();
-
+                var result = torch.sin(x).to(torch.float32);
+                torch.cuda.synchronize();
                 return result;
             }
         }

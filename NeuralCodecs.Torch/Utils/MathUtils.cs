@@ -10,6 +10,9 @@ public static class MathUtils
     /// <returns>The greatest common divisor of the two numbers</returns>
     public static long GCD(long a, long b)
     {
+        if (a == 0 && b == 0) throw new ArgumentException("Both numbers cannot be 0");
+        a = Math.Abs(a);
+        b = Math.Abs(b);
         while (b != 0)
         {
             long temp = b;
@@ -47,6 +50,17 @@ public static class MathUtils
     /// <returns>The decibel value</returns>
     public static double LinearToDecibel(double linear)
     {
+        if (linear <= 0) throw new ArgumentException("Linear value must be positive");
         return 20.0 * Math.Log10(linear);
+    }
+
+    public static double HertzToMel(double hz)
+    {
+        return 2595.0 * Math.Log10(1.0 + hz / 700.0);
+    }
+
+    public static double MelToHertz(double mel)
+    {
+        return 700.0 * (Math.Pow(10.0, mel / 2595.0) - 1.0);
     }
 }

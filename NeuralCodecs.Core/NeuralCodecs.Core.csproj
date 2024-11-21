@@ -7,12 +7,10 @@
 	  <IsPackable>false</IsPackable>
 	  <AssemblyName>NeuralCodecs.Core</AssemblyName>
   </PropertyGroup>
+
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>NeuralCodecs.Torch</_Parameter1>
-		</AssemblyAttribute>
-		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-			<_Parameter1>NeuralCodecs.ONNX</_Parameter1>
 		</AssemblyAttribute>
 	</ItemGroup>
 </Project>
