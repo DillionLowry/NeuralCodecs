@@ -141,6 +141,7 @@ public partial class SNAC
                 dilation: dilation);
         }
 
+        /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
             if (disposing)

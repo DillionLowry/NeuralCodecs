@@ -6,8 +6,17 @@ using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
 namespace NeuralCodecs.Torch
 {
+    /// <summary>
+    /// Validates SNAC (Simplified Neural Audio Codec) configuration and model implementations.
+    /// Ensures both the configuration parameters and the model's runtime behavior meet expected requirements.
+    /// </summary>
     public class SNACConfigValidator : IModelValidator<SNACConfig>
     {
+        /// <summary>
+        /// Validates the SNAC configuration parameters for correctness and consistency.
+        /// </summary>
+        /// <param name="config">The SNAC configuration to validate</param>
+        /// <returns>A ValidationResult indicating success or containing error messages if validation failed</returns>
         public ValidationResult ValidateConfig(SNACConfig config)
         {
             var errors = new List<string>();
@@ -50,6 +59,12 @@ namespace NeuralCodecs.Torch
                 : ValidationResult.Success();
         }
 
+        /// <summary>
+        /// Validates the SNAC model's runtime behavior by performing test encoding and decoding operations.
+        /// </summary>
+        /// <param name="model">The neural codec model to validate</param>
+        /// <param name="config">The configuration associated with the model</param>
+        /// <returns>A ValidationResult indicating success or containing error messages if validation failed</returns>
         public async Task<ValidationResult> ValidateModel(INeuralCodec model, SNACConfig config)
         {
             if (model is not SNAC snacModel)

@@ -54,11 +54,21 @@ public static class MathUtils
         return 20.0 * Math.Log10(linear);
     }
 
+    /// <summary>
+    /// Converts frequency in Hertz to Mel scale.
+    /// </summary>
+    /// <param name="hz">The frequency in Hertz</param>
+    /// <returns>The frequency in Mel scale</returns>
     public static double HertzToMel(double hz)
     {
         return 2595.0 * Math.Log10(1.0 + hz / 700.0);
     }
 
+    /// <summary>
+    /// Converts frequency in Mel scale to Hertz.
+    /// </summary>
+    /// <param name="mel">The frequency in Mel scale</param>
+    /// <returns>The frequency in Hertz</returns>
     public static double MelToHertz(double mel)
     {
         return 700.0 * (Math.Pow(10.0, mel / 2595.0) - 1.0);

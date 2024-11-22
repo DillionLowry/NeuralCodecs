@@ -96,7 +96,8 @@ public partial class SNAC
 
             return added.reshape(shape).MoveToOuterDisposeScope();
         }
-
+        
+        /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
             if (disposing)

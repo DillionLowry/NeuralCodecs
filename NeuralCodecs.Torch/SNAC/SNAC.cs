@@ -24,6 +24,11 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
     private SNACConfig _config;
     public IModelConfig Config => _config;
 
+    /// <summary>
+    /// Initializes a new instance of the SNAC neural audio codec.
+    /// </summary>
+    /// <param name="config">Configuration parameters for the codec</param>
+    /// <param name="device">The device (CPU/GPU) to run the model on</param>
     public SNAC(SNACConfig config, torch.Device device) : base("SNAC")
     {
         _config = config;
@@ -102,6 +107,11 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         return (audioHat.MoveToOuterDisposeScope(), codes);
     }
 
+    /// <summary>
+    /// Encodes audio data into a list of quantized codes.
+    /// </summary>
+    /// <param name="audioData">Input audio tensor</param>
+    /// <returns>A list of quantized code tensors</returns>
     public List<Tensor> Encode(Tensor audioData)
     {
         audioData = Preprocess(audioData);
@@ -111,6 +121,38 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         return codes;
     }
 
+    /// <summary>
+    /// Encodes audio data into a list of quantized codes.
+    /// </summary>
+    /// <param name="audioData">Input audio samples</param>
+    /// <returns>A list of quantized code arrays</returns>
+    public List<float[]> Encode(float[] audioData)
+    {
+        ArgumentNullException.ThrowIfNull(audioData);
+
+        using var scope = torch.NewDisposeScope();
+
+        // Convert input audio data to tensor
+        var inputTensor = torch.tensor(audioData, dtype: torch.float32)
+                              .reshape(1, 1, -1)
+                              .to(this.GetDevice());
+
+        // Preprocess and encode
+        inputTensor = Preprocess(inputTensor);
+        var z = encoder.forward(inputTensor);
+        var (_, codes) = quantizer.forward(z);
+
+        // Convert codes to float arrays
+        var codeArrays = codes.ConvertAll(code => code.cpu().detach().to(torch.float32).data<float>().ToArray());
+
+        return codeArrays;
+    }
+
+    /// <summary>
+    /// Decodes a list of quantized codes back into audio.
+    /// </summary>
+    /// <param name="codes">List of quantized code tensors</param>
+    /// <returns>Reconstructed audio tensor</returns>
     public Tensor Decode(List<Tensor> codes)
     {
         using var scope = torch.NewDisposeScope();
@@ -120,18 +162,40 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         return audio.MoveToOuterDisposeScope();
     }
-    //public float[] Decode(List<Tensor> codes)
-    //{
-    //    using var scope = torch.NewDisposeScope();
 
-    //    var zQ = quantizer.FromCodes(codes);
-    //    var audio = decoder.forward(zQ);
 
-    //    return audio.cpu()
-    //                .detach()
-    //                .data<float>()
-    //                .ToArray();
-    //}
+    /// <summary>
+    /// Decodes a list of quantized codes back into audio.
+    /// </summary>
+    /// <param name="codes">List of quantized code arrays</param>
+    /// <returns>Reconstructed audio samples</returns>
+    public float[] Decode(List<float[]> codes)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+
+        if (codes.Count == 0 || codes.Any(code => code == null))
+        {
+            throw new ArgumentException("Codes list cannot be empty or contain null arrays", nameof(codes));
+        }
+
+        using var scope = torch.NewDisposeScope();
+
+        // Convert code arrays to tensors with int64 dtype for indices
+        var codeTensors = codes.ConvertAll(code => torch.tensor(code, dtype: torch.int64).reshape(1, -1).to(this.GetDevice()));
+
+        var zQ = quantizer.FromCodes(codeTensors);
+        var audio = decoder.forward(zQ);
+
+        // Convert output tensor to float array
+        return audio.cpu().detach().data<float>().ToArray();
+    }
+
+    /// <summary>
+    /// Loads pre-trained model weights from a file.
+    /// </summary>
+    /// <param name="path">Path to the weights file</param>
+    /// <exception cref="FileNotFoundException">Thrown when the weights file is not found</exception>
+    /// <exception cref="InvalidOperationException">Thrown when loading weights fails</exception>
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
@@ -148,6 +212,13 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         }
     }
 
+    /// <summary>
+    /// Processes audio data through the codec pipeline, optionally resampling if needed.
+    /// </summary>
+    /// <param name="audioData">Raw audio samples</param>
+    /// <param name="sampleRate">Sample rate of the input audio</param>
+    /// <returns>Processed audio samples</returns>
+    /// <exception cref="ArgumentException">Thrown when audio data is null or empty</exception>
     public float[] ProcessAudio(float[] audioData, int sampleRate)
     {
         if (audioData == null || audioData.Length == 0)

@@ -2,7 +2,6 @@ using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Core.Events;
 using NeuralCodecs.Core.Validation;
 
-// TODO: Cleanup and refactor
 namespace NeuralCodecs.Core.Loading
 {
     /// <summary>
@@ -55,33 +54,6 @@ namespace NeuralCodecs.Core.Loading
             ModelLoadOptions? options = null)
             where TModel : class, INeuralCodec
             where TConfig : class, IModelConfig;
-
-        ///// <summary>
-        ///// Loads a model from a local file path
-        ///// </summary>
-        ///// <typeparam name="TModel">Type of model to load</typeparam>
-        ///// <param name="path">Path to model file</param>
-        ///// <param name="options">Loading options</param>
-        ///// <returns>Loaded model instance</returns>
-        //    Task<TModel> LoadLocalModel<TModel>(string path, ModelLoadOptions options) where TModel : INeuralCodec;
-
-        ///// <summary>
-        ///// Loads a model from a remote source
-        ///// </summary>
-        ///// <typeparam name="TModel">Type of model to load</typeparam>
-        ///// <param name="source">Remote source identifier (e.g., HuggingFace model ID)</param>
-        ///// <param name="options">Loading options</param>
-        ///// <returns>Loaded model instance</returns>
-        //Task<TModel> LoadRemoteModel<TModel>(string source, ModelLoadOptions options) where TModel : INeuralCodec;
-
-        ///// <summary>
-        ///// Creates a new model instance from configuration
-        ///// </summary>
-        ///// <typeparam name="TModel">Type of model to create</typeparam>
-        ///// <param name="config">Model configuration</param>
-        ///// <param name="device">Target device for the model</param>
-        ///// <returns>Created model instance</returns>
-        //TModel CreateModel<TModel>(IModelConfig config, Device? device = null) where TModel : INeuralCodec;
 
         /// <summary>
         /// Gets information about a model without loading it

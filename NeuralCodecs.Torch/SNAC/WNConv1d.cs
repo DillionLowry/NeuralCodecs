@@ -137,6 +137,7 @@ public partial class SNAC
                 groups: groups).MoveToOuterDisposeScope();
         }
 
+        /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
             if (disposing)
