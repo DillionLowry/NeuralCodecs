@@ -10,8 +10,8 @@ namespace NeuralCodecs.Torch.Examples
             if (args.Length < 3)
             {
                 modelPath = "hubertsiuzdak/snac_24khz"; // Download from huggingface
-                inputAudioPath = "Your/audio/here";
-                outputAudioPath = "output.wav";
+                inputAudioPath = "en_sample.wav";
+                outputAudioPath = "output_f.wav";
             }
             else
             {
@@ -61,19 +61,19 @@ namespace NeuralCodecs.Torch.Examples
             }
 
             //Process audio
-            Console.WriteLine("Processing audio...");
-            var processedAudio = model.ProcessAudio(
-                [.. buffer],
-                audioFile.WaveFormat.SampleRate
-            );
+            //Console.WriteLine("Processing audio...");
+            //var processedAudio = model.ProcessAudio(
+            //    [.. buffer],
+            //    audioFile.WaveFormat.SampleRate
+            //);
 
-            /* Or:
+
             Console.WriteLine("Encoding audio...");
             var codes = model.Encode(buffer.ToArray());
 
             Console.WriteLine("Decoding audio...");
             var processedAudio = model.Decode(codes);
-            */
+            
 
             // Save output
             Console.WriteLine("Saving output...");
