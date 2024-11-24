@@ -44,7 +44,7 @@ var model = await torchLoader.LoadModelAsync<SNAC, SNACConfig>("model.pt", confi
 ```
 
 5. #### Using factory method for custom models:
-      Allows the use of custom model implementations with built-in loaders
+      Allows the use of custom model implementations with built-in or custom loaders
 ```csharp
 // Load custom model with factory method
 var model = await torchLoader.LoadModelAsync<CustomModel, CustomConfig>(
