@@ -1,3 +1,4 @@
+using NeuralCodecs.Torch.Utils;
 using System;
 using System.Numerics;
 using TorchSharp;
@@ -28,6 +29,14 @@ public static class AudioEffects
         float wetLevel = 0.3f,
         float dryLevel = 0.7f)
     {
+        if (signal == null) throw new ArgumentNullException(nameof(signal));
+
+        // Clamp parameters to valid ranges
+        roomSize = Math.Clamp(roomSize, 0f, 1f);
+        damping = Math.Clamp(damping, 0f, 1f);
+        wetLevel = Math.Clamp(wetLevel, 0f, 1f);
+        dryLevel = Math.Clamp(dryLevel, 0f, 1f);
+
         // Schroeder reverberator implementation
         var output = signal.Clone();
         var input = signal.AudioData;
@@ -36,59 +45,71 @@ public static class AudioEffects
         var combDelays = new[] { 1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116 };
         var allpassDelays = new[] { 225, 556, 441, 341 };
 
+        // Preallocate reusable tensors
         var combFiltered = torch.zeros_like(input);
+        var tempBuffer = torch.zeros_like(input);
+        var lastOutput = torch.zeros_like(input[.., 0]);
 
-        // Apply parallel comb filters
-        for (int i = 0; i < combDelays.Length; i++)
+        try
         {
-            var delay = combDelays[i];
-            var buffer = torch.zeros(input.size(0), input.size(1), delay).to(input.device);
-            var feedback = roomSize * 0.84f;
-            var damping_coeff = damping;
-
-            var filtered = torch.zeros_like(input);
-            var last_output = torch.zeros_like(input[.., 0]);
-
-            for (int n = 0; n < input.size(-1); n++)
+            // Apply parallel comb filters
+            foreach (var delay in combDelays)
             {
-                var current_input = input[.., n];
-                var delayed = buffer[.., -1];
-                var filterOutput = (delayed * (1 - damping_coeff)) + (last_output * damping_coeff);
+                using var buffer = torch.zeros(input.size(0), input.size(1), delay).to(input.device);
+                var feedback = roomSize * 0.84f;
 
-                buffer = torch.roll(buffer, -1, -1);
-                buffer[.., 0] = current_input + (filterOutput * feedback);
-                filtered[.., n] = filterOutput;
-                last_output = filterOutput;
+                tempBuffer.zero_(); // Reuse buffer by clearing
+                lastOutput.zero_();
+
+                for (int n = 0; n < input.size(-1); n++)
+                {
+                    var currentInput = input[.., n];
+                    using var delayed = buffer[.., -1];
+                    var filterOutput = delayed.mul(1 - damping).add_(lastOutput.mul(damping));
+
+                    buffer.RollInPlace(-1, -1);
+                    buffer[.., 0] = currentInput.add(filterOutput.mul(feedback));
+                    tempBuffer[.., n] = filterOutput;
+                    lastOutput.copy_(filterOutput);
+                }
+
+                combFiltered.add_(tempBuffer);
             }
 
-            combFiltered += filtered;
-        }
+            // Apply series allpass filters
+            var allpassFiltered = combFiltered; // reuse tensor
 
-        // Apply series allpass filters
-        var allpassFiltered = combFiltered;
-        foreach (var delay in allpassDelays)
-        {
-            var buffer = torch.zeros(input.size(0), input.size(1), delay).to(input.device);
-            var feedback = 0.5f;
-
-            var filtered = torch.zeros_like(input);
-
-            for (int n = 0; n < input.size(-1); n++)
+            foreach (var delay in allpassDelays)
             {
-                var current_input = allpassFiltered[.., n];
-                var delayed = buffer[.., -1];
-                var filterOutput = (-current_input * feedback) + delayed + (delayed * feedback);
-                buffer = torch.roll(buffer, -1, -1);
-                buffer[.., 0] = current_input + (filterOutput * feedback);
-                filtered[.., n] = filterOutput;
+                using var buffer = torch.zeros(input.size(0), input.size(1), delay).to(input.device);
+                tempBuffer.zero_();
+                var feedback = 0.5f;
+
+                for (int n = 0; n < input.size(-1); n++)
+                {
+                    var currentInput = allpassFiltered[.., n];
+                    using var delayed = buffer[.., -1];
+                    var filterOutput = currentInput.mul(-feedback).add(delayed).add(delayed.mul(feedback));
+
+                    buffer.RollInPlace(-1, -1);
+                    buffer[.., 0] = currentInput.add(filterOutput.mul(feedback));
+                    tempBuffer[.., n] = filterOutput;
+                }
+
+                allpassFiltered = tempBuffer.clone();
             }
 
-            allpassFiltered = filtered;
+            // Final mix in-place
+            output.AudioData = input.mul(dryLevel).add_(allpassFiltered.mul(wetLevel));
+            return output;
         }
-
-        // Mix dry and wet signals
-        output.AudioData = (dryLevel * input) + (wetLevel * allpassFiltered);
-        return output;
+        finally
+        {
+            // Cleanup
+            combFiltered.Dispose();
+            tempBuffer.Dispose();
+            lastOutput.Dispose();
+        }
     }
 
     /// <summary>
@@ -121,7 +142,7 @@ public static class AudioEffects
             var delayed_signal = buffer[.., -1];
             delayed[.., n] = delayed_signal;
 
-            buffer = torch.roll(buffer, -1, -1);
+            buffer.RollInPlace(-1, -1);
             buffer[.., 0] = current_input + (delayed_signal * feedback);
         }
 
@@ -214,7 +235,7 @@ public static class AudioEffects
             var releaseGain = 1.0f - torch.exp(-1.0f / releaseSamples);
 
             var gain = (bool)(inputLevel > currentLevel) ? attackGain : releaseGain;
-            currentLevel = currentLevel + (gain * (inputLevel - currentLevel));
+            currentLevel.add_(gain * (inputLevel - currentLevel));
             envelope[.., n] = currentLevel;
         }
 
@@ -273,7 +294,7 @@ public static class AudioEffects
             var delayedSignal = (delayed1 * (1 - delayFrac)) + (delayed2 * delayFrac);
 
             // Update buffer
-            buffer = torch.roll(buffer, -1, -1);
+            buffer.RollInPlace( -1, -1);
             buffer[.., 0] = currentInput + (delayedSignal * feedback);
 
             processed[.., n] = delayedSignal;
@@ -336,7 +357,7 @@ public static class AudioEffects
                 var delayed2 = voiceBuffer.index(TensorIndex.Ellipsis, delayFloor + 1);
                 var delayedSignal = (delayed1 * (1 - delayFrac)) + (delayed2 * delayFrac);
 
-                voiceBuffer = torch.roll(voiceBuffer, -1, -1);
+                voiceBuffer.RollInPlace(-1, -1);
                 voiceBuffer[.., 0] = currentInput;
 
                 voiceOutput[.., n] = delayedSignal;
@@ -349,6 +370,83 @@ public static class AudioEffects
         processed /= voices;
         output.AudioData = ((1 - wetLevel) * input) + (wetLevel * processed);
         return output;
+    }
+    public static AudioSignal ApplyChorus_ToTest(
+    this AudioSignal signal,
+    int voices = 3,
+    float baseDelay = 0.030f,
+    float rateSpread = 0.2f,
+    float depthSpread = 0.003f,
+    float wetLevel = 0.5f)
+    {
+        var output = signal.Clone();
+        var input = signal.AudioData;
+
+        // Preallocate tensors outside the loop
+        var processed = torch.zeros_like(input);
+        var t = torch.linspace(0, signal.SignalDuration, signal.SignalLength, device: signal.Device);
+
+        // Calculate max buffer size once
+        var maxDelayBase = (baseDelay + 0.005f * (voices - 1));
+        var maxDepth = 0.002f + (depthSpread * (voices - 1) / voices);
+        var maxDelaySamples = (int)((maxDelayBase + maxDepth) * signal.SampleRate);
+
+        // Reuse these tensors across voices
+        var voiceBuffer = torch.zeros(input.size(0), input.size(1), maxDelaySamples + 1).to(input.device);
+        var voiceOutput = torch.zeros_like(input);
+        var delayLengths = torch.zeros(signal.SignalLength, device: signal.Device);
+
+        try
+        {
+            for (int voice = 0; voice < voices; voice++)
+            {
+                var rate = 0.5f + (rateSpread * (voice - (voices / 2)) / voices);
+                var depth = 0.002f + (depthSpread * voice / voices);
+                var delay = baseDelay + (0.005f * voice);
+                var currentMaxDelay = (int)((delay + depth) * signal.SampleRate);
+
+                // Calculate LFO in-place
+                delayLengths.copy_((currentMaxDelay * 0.5f) *
+                    (1 + torch.sin((2 * (float)Math.PI * rate * t) + (voice * (float)Math.PI / voices))));
+
+                // Reset buffers
+                voiceBuffer.zero_();
+                voiceOutput.zero_();
+
+                for (int n = 0; n < input.size(-1); n++)
+                {
+                    var currentInput = input[.., n];
+                    var delayLength = delayLengths[n];
+                    var delayFloor = torch.floor(delayLength).to(torch.int64);
+                    var delayFrac = delayLength - delayFloor;
+
+                    // Use indexing without creating new tensors
+                    using (var delayed1 = voiceBuffer.index(TensorIndex.Ellipsis, delayFloor))
+                    using (var delayed2 = voiceBuffer.index(TensorIndex.Ellipsis, delayFloor + 1))
+                    {
+                        voiceOutput[.., n] = (delayed1 * (1 - delayFrac)) + (delayed2 * delayFrac);
+                    }
+
+                    voiceBuffer.RollInPlace( -1, -1);
+                    voiceBuffer[.., 0] = currentInput;
+                }
+
+                processed.add_(voiceOutput, alpha: 1.0f / voices);  // In-place addition and scaling
+            }
+
+            // Final mix in-place
+            output.AudioData = input.mul(1 - wetLevel).add(processed.mul(wetLevel));
+            return output;
+        }
+        finally
+        {
+            // Explicit cleanup
+            voiceBuffer.Dispose();
+            voiceOutput.Dispose();
+            delayLengths.Dispose();
+            processed.Dispose();
+            t.Dispose();
+        }
     }
 
     /// <summary>

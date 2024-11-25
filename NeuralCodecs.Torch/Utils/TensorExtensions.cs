@@ -47,4 +47,26 @@ public static class TensorExtensions
         using var scope = torch.NewDisposeScope();
         return tensor.detach().MoveToOuterDisposeScope();
     }
+    /// <summary>
+    /// Implements in-place rolling (Torch roll_) for the last dimension
+    /// </summary>
+    /// <param name="tensor"></param>
+    /// <param name="shift"></param>
+    /// <param name="dim"></param>
+    public static void RollInPlace(this torch.Tensor tensor, int shift, int dim = -1)
+    {
+        if (shift == 0) return;
+
+        var n = tensor.size(dim);
+        shift = (int)(((shift % n) + n) % n); // Handle negative shifts
+
+        // Store the wrapped portion
+        using var temp = tensor.narrow(dim, n - shift, shift).clone();
+
+        // Shift the main portion
+        tensor.narrow(dim, shift, n - shift).copy_(tensor.narrow(dim, 0, n - shift));
+
+        // Copy wrapped portion to start
+        tensor.narrow(dim, 0, shift).copy_(temp);
+    }
 }
