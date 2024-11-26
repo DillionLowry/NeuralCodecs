@@ -1,5 +1,4 @@
 using NeuralCodecs.Torch.Modules;
-using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
