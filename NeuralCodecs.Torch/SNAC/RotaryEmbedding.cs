@@ -19,17 +19,12 @@ public partial class SNAC
         {
             using var scope = NewDisposeScope();
             var lastDim = x.size(-1);
-            var newShape = x.shape.ToList();
 
-            newShape[^1] = 2;
-            newShape.Add(lastDim / 2);
+            var firstHalf = x.slice(-1, 0, lastDim / 2, 1);
+            var secondHalf = x.slice(-1, lastDim / 2, lastDim, 1);
 
-            // Get the two halves
-            var x1 = x.select(dim: -2, index: 0);
-            var x2 = x.select(dim: -2, index: 1);
-
-            // Concatenate -x2 and x1 along the last dimension
-            return cat(new[] { x2.neg(), x1 }, dim: -1).MoveToOuterDisposeScope();
+            // Concatenate -secondHalf and firstHalf along the last dimension
+            return cat(new[] { secondHalf.neg(), firstHalf }, dim: -1).MoveToOuterDisposeScope();
         }
 
         /// <summary>
@@ -55,20 +50,21 @@ public partial class SNAC
         {
             using var scope = NewDisposeScope();
 
-            var qLen = q.size(-2);
-            var qFreqs = freqs.slice(dim: -2, start: -qLen, finish: freqs.size(-2), step: 1);
-            var invScale = scale.reciprocal();
+            var qLength = q.size(-2);
+            var qFreqs = freqs.slice(dim: -2, start: -qLength, finish: freqs.size(-2), step: 1);
+
+            var inverseScale = scale.reciprocal();
 
             if (scale.dim() == 2)
             {
-                scale = scale.slice(dim: 0, start: -qLen, finish: scale.size(0), step: 1);
+                scale = scale.slice(dim: 0, start: -qLength, finish: scale.size(0), step: 1);
             }
 
             q = q.mul(qFreqs.cos()).mul(scale)
                 .add(RotateHalf(q).mul(qFreqs.sin()).mul(scale));
 
-            k = k.mul(freqs.cos()).mul(invScale)
-                .add(RotateHalf(k).mul(freqs.sin()).mul(invScale));
+            k = k.mul(freqs.cos()).mul(inverseScale)
+                .add(RotateHalf(k).mul(freqs.sin()).mul(inverseScale));
 
             return (q.MoveToOuterDisposeScope(), k.MoveToOuterDisposeScope());
         }

@@ -12,25 +12,18 @@ public partial class SNAC
     /// </summary>
     public class SinusoidalEmbedding : Module<Tensor, (Tensor freqs, Tensor scale)>
     {
-        /// <summary>
-        /// Inverse frequency tensor calculated using logarithmic spacing
-        /// </summary>
-        private readonly Tensor invFreq;
-
-        /// <summary>
-        /// Optional base value for XPos scaling calculations
-        /// </summary>
-        private readonly int? scaleBase;
-
-        /// <summary>
-        /// Flag to enable XPos scaling mechanism
-        /// </summary>
-        private readonly bool useXpos;
+        private readonly int? _scaleBase;
+        private readonly bool _useXpos;
 
         /// <summary>
         /// Scale tensor used for XPos calculations
         /// </summary>
         private readonly Tensor scale;
+
+        /// <summary>
+        /// Inverse frequency tensor calculated using logarithmic spacing
+        /// </summary>
+        private readonly Tensor inv_freq;
 
         /// <summary>
         /// Initializes a new instance of sinusoidal embeddings
@@ -42,22 +35,20 @@ public partial class SNAC
         public SinusoidalEmbedding(int dim, int? scaleBase = null, bool useXpos = false)
             : base("SinusoidalEmbedding")
         {
-            this.useXpos = useXpos;
-            this.scaleBase = scaleBase;
-
-            invFreq = arange(0, dim, 2).to(float32)
-                .div(dim)
-                .neg()
-                .exp()
-                .mul(Math.Log(10000));
-            ConditionallyRegisterBuffer("inv_freq", invFreq);
-
             if (useXpos && !scaleBase.HasValue)
                 throw new ArgumentException("scale_base must be defined if using xpos");
 
-            scale = arange(0, dim, 2)
-                .add(0.4f * dim)
-                .div(1.4f * dim);
+            _useXpos = useXpos;
+            _scaleBase = scaleBase;
+
+            // Calculate inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+            var indices = arange(0, dim, 2).to(float32);
+            var power = indices.div(dim);
+            inv_freq = ones_like(power).div(pow(10000, power));
+            ConditionallyRegisterBuffer("inv_freq", inv_freq);
+
+            // Calculate scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
+            scale = arange(0, dim, 2).add(0.4f * dim).div(1.4f * dim);
             ConditionallyRegisterBuffer("scale", scale, persistent: false);
 
             RegisterComponents();
@@ -80,26 +71,41 @@ public partial class SNAC
             using var scope = NewDisposeScope();
 
             var seqLen = x.size(-2);
-            var t = arange(seqLen, device: x.device).to(invFreq.dtype);
+            var t = arange(seqLen, device: x.device).to(inv_freq.dtype);
 
-            var freqs = einsum("i,j->ij", t, invFreq);
+            // Calculate position frequencies - shape will be [seqLen, dim/2]
+            var freqs = einsum("i,j->ij", t, inv_freq);
 
+            // Duplicate frequencies - shape will be [seqLen, dim]
             freqs = cat(new[] { freqs, freqs }, dim: -1);
 
-            if (!useXpos)
-                return (freqs.MoveToOuterDisposeScope(), ones(1, device: x.device));
+            if (!_useXpos)
+            {
+                return (freqs.MoveToOuterDisposeScope(), ones(1, device: x.device).MoveToOuterDisposeScope());
+            }
 
-            if (!scaleBase.HasValue)
+            if (!_scaleBase.HasValue)
             {
                 throw new InvalidOperationException("scaleBase must have a value when useXpos is true.");
             }
-            var power = t.sub(seqLen / 2).div(scaleBase.Value);
 
-            var scaleValues = scale.pow(power.reshape(-1, 1));
+            // Calculate power - shape [seq_len]
+            var power = t.sub(seqLen / 2).div(_scaleBase.Value);
 
-            scaleValues = cat([scaleValues, scaleValues], dim: -1);
+            // Reshape power to [seq_len, 1]
+            power = power.reshape(-1, 1);
+
+            // Take self.scale [dim/2] => [1, dim/2] and expand to [seq_len, dim/2]
+            var expandedScale = scale.unsqueeze(0).expand(seqLen, -1);
+
+            // Apply power to expanded scale => [seq_len, dim/2]
+            var scaleValues = expandedScale.pow(power);
+
+            // Duplicate scale values => [seq_len, dim]
+            scaleValues = cat(new[] { scaleValues, scaleValues }, dim: -1);
 
             return (freqs.MoveToOuterDisposeScope(), scaleValues.MoveToOuterDisposeScope());
         }
     }
+
 }
