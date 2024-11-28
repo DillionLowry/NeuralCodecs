@@ -1,7 +1,7 @@
 using NeuralCodecs.Core.Configuration;
 using System.Text.Json.Serialization;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Config.SNAC;
 
 /// <summary>
 /// Configuration class for the SNAC (Specialized Neural Audio Codec) model.

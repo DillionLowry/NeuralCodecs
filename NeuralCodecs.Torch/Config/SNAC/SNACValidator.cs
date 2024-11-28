@@ -1,16 +1,17 @@
 ﻿using NeuralCodecs.Core;
 using NeuralCodecs.Core.Utils;
 using NeuralCodecs.Core.Validation;
+using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
-namespace NeuralCodecs.Torch
+namespace NeuralCodecs.Torch.Config.SNAC
 {
     /// <summary>
     /// Validates SNAC (Simplified Neural Audio Codec) configuration and model implementations.
     /// Ensures both the configuration parameters and the model's runtime behavior meet expected requirements.
     /// </summary>
-    public class SNACConfigValidator : IModelValidator<SNACConfig>
+    public class SNACValidator : IModelValidator<SNACConfig>
     {
         /// <summary>
         /// Validates the SNAC configuration parameters for correctness and consistency.
@@ -67,11 +68,19 @@ namespace NeuralCodecs.Torch
         /// <returns>A ValidationResult indicating success or containing error messages if validation failed</returns>
         public async Task<ValidationResult> ValidateModel(INeuralCodec model, SNACConfig config)
         {
-            if (model is not SNAC snacModel)
+            if (model is not Models.SNAC snacModel)
             {
                 return ValidationResult.Failed($"Expected SNAC model but got {model.GetType().Name}");
             }
-
+            //TODO
+            var dict = snacModel.state_dict();
+            var shapetracker = new ShapeTracker();
+            foreach (var kvp in dict)
+            {
+                Console.WriteLine($"Key: {kvp.Key}, Value: {kvp.Value}");
+                shapetracker.Track(kvp.Key, kvp.Value, "state_dict");
+            }
+            shapetracker.DumpShapes();
             var errors = new List<string>();
 
             try
