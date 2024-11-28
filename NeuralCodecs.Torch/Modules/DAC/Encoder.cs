@@ -3,18 +3,18 @@ using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Modules.DAC;
 
 public class Encoder : Module<Tensor, Tensor>
 {
-    private readonly Sequential block;
+    private readonly Sequential block; //TODO NAME
 
     public Encoder(
         int dModel = 64,
         int[] strides = null,
         int dLatent = 64) : base("Encoder")
     {
-        strides ??= new[] { 2, 4, 8, 8 };
+        strides ??= [2, 4, 8, 8];
 
         var layers = new List<Module<Tensor, Tensor>>
         {
@@ -36,7 +36,7 @@ public class Encoder : Module<Tensor, Tensor>
             new WNConv1d(dModel, dLatent, kernelSize: 3, padding: 1)
         });
 
-        block = nn.Sequential(layers);
+        block = Sequential(layers);
         RegisterComponents();
     }
 
