@@ -1,10 +1,9 @@
 using NeuralCodecs.Torch.Modules;
 using TorchSharp.Modules;
-using static NeuralCodecs.Torch.SNAC;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Modules.DAC;
 
 public class DecoderBlock : Module<Tensor, Tensor>
 {

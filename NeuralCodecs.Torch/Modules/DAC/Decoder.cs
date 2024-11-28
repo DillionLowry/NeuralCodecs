@@ -3,7 +3,7 @@ using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Modules.DAC;
 
 public class Decoder : Module<Tensor, Tensor>
 {
@@ -26,7 +26,7 @@ public class Decoder : Module<Tensor, Tensor>
         for (int i = 0; i < rates.Length; i++)
         {
             int inputDim = channels / (1 << i);
-            outputDim = channels / (1 << (i + 1));
+            outputDim = channels / (1 << i + 1);
             layers.Add(new DecoderBlock(inputDim, outputDim, rates[i]));
         }
 
@@ -35,10 +35,10 @@ public class Decoder : Module<Tensor, Tensor>
         {
             new Snake1d(outputDim),
             new WNConv1d(outputDim, dOut, kernelSize: 7, padding: 3),
-            nn.Tanh()
+            Tanh()
         });
 
-        model = nn.Sequential(layers);
+        model = Sequential(layers);
         RegisterComponents();
     }
 
