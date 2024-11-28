@@ -1,8 +1,9 @@
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch.Modules;
+namespace NeuralCodecs.Torch.Modules.DAC;
 
 /// <summary>
 /// Implements a Weight Normalized 1D Transposed Convolution layer.
@@ -15,33 +16,33 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// Optional bias parameter
     /// </summary>
     private readonly Parameter bias;
+    private readonly Parameter weight_g;
+    private readonly Parameter weight_v;
 
-    /// <summary>
-    /// Weight Normalized parameters for convolution
-    /// </summary>
-    private readonly ParameterDict parametrizations = [];
+
+
+
+    private readonly long _outputPadding;
 
     /// <summary>
     /// Stride for the convolution operation
     /// </summary>
-    private readonly long stride;
+    private readonly long _stride;
 
     /// <summary>
     /// Padding applied to input before convolution
     /// </summary>
-    private readonly long padding;
-
-    private readonly long outputPadding;
+    private readonly long _padding;
 
     /// <summary>
     /// Dilation factor for the convolution
     /// </summary>
-    private readonly long dilation;
+    private readonly long _dilation;
 
     /// <summary>
     /// Number of groups for grouped convolution
     /// </summary>
-    private readonly long groups;
+    private readonly long _groups;
 
     /// <summary>
     /// Initializes a new instance of the WNConvTranspose1d module.
@@ -58,52 +59,61 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     public WNConvTranspose1d(long inChannels, long outChannels, long kernelSize,
         long stride = 1, long padding = 0, long outputPadding = 0,
         long dilation = 1, long groups = 1, bool useBias = true)
-        : base($"WNConvTranspose1d")
+        : base($"conv_t")
     {
-        this.padding = padding;
-        this.groups = groups;
+        _stride = stride;
+        _padding = padding;
+        _dilation = dilation;
+        _groups = groups;
+        _outputPadding = outputPadding;
 
-        parametrizations.Add("weight.original0", new Parameter(
-            empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
+        weight_v = new Parameter(
+            empty(new long[] { inChannels, outChannels/groups, kernelSize },
+                  dtype: float32));
 
-        parametrizations.Add("weight.original1", new Parameter(
-            empty(new long[] { inChannels, outChannels / groups, kernelSize }, dtype: float32)));
+        // Initialize g parameter (one per output channel)
+        weight_g = new Parameter(
+            empty(new long[] { 1, outChannels, 1 }, dtype: float32));
+
+        //parametrizations.Add("weight.original0", new Parameter(
+        //    empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
+
+        //parametrizations.Add("weight.original1", new Parameter(
+        //    empty(new long[] { inChannels, outChannels / groups, kernelSize }, dtype: float32)));
 
         if (useBias)
         {
             bias = Parameter(empty(outChannels, dtype: float32));
         }
 
-        this.stride = stride;
-        this.outputPadding = outputPadding;
-        this.dilation = dilation;
         RegisterComponents();
         ResetParameters(useBias);
     }
 
     /// <summary>
-    /// Resets the parameters of the layer using Kaiming initialization for weights
-    /// and uniform initialization for bias if enabled.
+    /// Resets the parameters of the layer, initializing the weights using Kaiming uniform initialization and setting the bias.
     /// </summary>
-    /// <param name="useBias">Whether to initialize bias parameter</param>
-    public void ResetParameters(bool useBias)
+    /// <param name="useBias">If true, initializes the bias parameter.</param>
+    private void ResetParameters(bool useBias)
     {
         using (no_grad())
         {
-            // Initialize weight_v using Kaiming initialization
-            var weight = empty_like(parametrizations["weight.original1"]);
+            var weight = empty_like(weight_v);
             init.kaiming_uniform_(weight, Math.Sqrt(5));
+            weight_v.set_(weight);
 
             // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
-            var norm = sqrt(weight.pow(2).sum(new long[] { 1, 2 }, keepdim: true));
+            var norm = weight.contiguous().pow(2)
+                       .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+                       .sqrt();
+            weight_g.set_(norm);
 
-            // Set weight_g and weight_v
-            parametrizations["weight.original0"].set_(norm);
-            parametrizations["weight.original1"].set_(weight.div(norm.add(1e-7f)));
+            //parametrizations["weight.original0"].set_(norm);
+            //parametrizations["weight.original1"].set_(weight.div(norm.sub(1e-7f)));
 
             if (useBias)
             {
-                var fan_in = parametrizations["weight.original1"].size(1) * parametrizations["weight.original1"].size(2);
+                var fan_in = weight_v.size(1) * weight_g.size(2);
                 var bound = fan_in > 0 ?
                             1.0 / Math.Sqrt(fan_in) :
                             0.0;
@@ -122,30 +132,36 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// </returns>
     public override Tensor forward(Tensor input)
     {
-        var v = parametrizations["weight.original1"];
-        var g = parametrizations["weight.original0"];
+        try
+        {
+            var vNorm = weight_v.contiguous().pow(2)
+                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+                .sqrt();
+            var nWeight = mul(weight_v.div(vNorm), weight_g.sub(1e-7f)).contiguous();
 
-        var v_norm = v.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
-        var weight = mul(v.div(v_norm), g.sub(1e-7f)).contiguous();
-
-        return functional.conv_transpose1d(
-            input,
-            weight,
-            bias,
-            stride: stride,
-            padding: padding,
-            output_padding: outputPadding,
-            groups: groups,
-            dilation: dilation);
+            return functional.conv_transpose1d(
+                input,
+                nWeight,
+                bias,
+                stride: _stride,
+                padding: _padding,
+                output_padding: _outputPadding,
+                groups: _groups,
+                dilation: _dilation);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
-
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            parametrizations["weight.original0"]?.Dispose();
-            parametrizations["weight.original1"]?.Dispose();
+            weight_v?.Dispose();
+            weight_g?.Dispose();
             bias?.Dispose();
         }
         base.Dispose(disposing);
