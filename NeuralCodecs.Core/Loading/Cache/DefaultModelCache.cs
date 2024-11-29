@@ -48,19 +48,11 @@ namespace NeuralCodecs.Core.Loading.Cache
         public async Task<string?> GetCachedPath(string modelId, string revision)
         {
             var modelDir = GetModelCacheDir(modelId, revision);
-            var modelPath = Path.Combine(modelDir, "pytorch_model.bin");
-            var configPath = Path.Combine(modelDir, "config.json");
             var metaPath = Path.Combine(modelDir, "cache_meta.json");
 
-            if (File.Exists(modelPath) &&
-                File.Exists(configPath) &&
-                File.Exists(metaPath))
+            if (File.Exists(metaPath) && await GetCacheMetadata(metaPath) is CacheMetadata meta)
             {
-                // Validate cache metadata
-                if (await ValidateCacheMetadata(metaPath))
-                {
-                    return modelPath;
-                }
+                return Path.Combine(modelDir, meta.ModelFileName);
             }
 
             return null;
@@ -90,7 +82,7 @@ namespace NeuralCodecs.Core.Loading.Cache
             var targetPath = Path.Combine(targetDir, targetFileName);
             var targetConfigPath = Path.Combine(targetDir, targetConfigFileName);
 
-            await _cacheLock.WaitAsync();
+            //await _cacheLock.WaitAsync();
             try
             {
                 // Verify source file exists and is accessible
@@ -116,7 +108,7 @@ namespace NeuralCodecs.Core.Loading.Cache
                     await source.CopyToAsync(targetConfig);
                 }
 
-                await CreateCacheMetadata(targetDir, modelId, revision, sourcePath);
+                await CreateCacheMetadata(targetDir, modelId, revision, targetFileName, targetConfigFileName);
 
                 return targetPath;
             }
@@ -131,7 +123,7 @@ namespace NeuralCodecs.Core.Loading.Cache
             }
             finally
             {
-                _cacheLock.Release();
+                //_cacheLock.Release();
             }
         }
 
@@ -205,8 +197,39 @@ namespace NeuralCodecs.Core.Loading.Cache
                 return false;
             }
         }
+        private async Task<CacheMetadata?> GetCacheMetadata(string metaPath)
+        {
+            try
+            {
+                var meta = JsonSerializer.Deserialize<CacheMetadata>(
+                    await File.ReadAllTextAsync(metaPath));
 
-        private async Task CreateCacheMetadata(string cacheDir, string modelId, string revision, string sourcePath)
+                if (meta == null) return null;
+
+                // Check timestamp isn't too old (e.g., 30 days)
+                var ageInDays = (DateTime.UtcNow - meta.Timestamp).TotalDays;
+                if (ageInDays > meta.MaxAgeInDays) return null;
+
+                // Verify file hashes
+                foreach (var file in meta.Files)
+                {
+                    var path = Path.Combine(Path.GetDirectoryName(metaPath)!, file.Path);
+                    if (!File.Exists(path))
+                    {
+                        Console.WriteLine($"File not found: {path}");
+                        return null;
+                    }
+                }
+
+                return meta;
+            }
+            catch
+            {
+                Console.WriteLine($"Failed to read cache metadata: {metaPath}");
+                return null;
+            }
+        }
+        private async Task CreateCacheMetadata(string cacheDir, string modelId, string revision, string filename, string configFilename = "config.json")
         {
             var fileNames = Directory.GetFiles(cacheDir);
             var meta = new CacheMetadata
@@ -215,6 +238,8 @@ namespace NeuralCodecs.Core.Loading.Cache
                 Revision = revision,
                 Timestamp = DateTime.UtcNow,
                 MaxAgeInDays = 30,
+                ModelFileName = filename,
+                ConfigFileName = configFilename,
                 Files = fileNames.Select(fileName => new CachedFile
                 {
                     Path = fileName
