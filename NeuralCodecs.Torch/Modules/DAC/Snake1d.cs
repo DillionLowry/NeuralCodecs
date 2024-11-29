@@ -3,7 +3,7 @@ using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace NeuralCodecs.Torch.Modules;
+namespace NeuralCodecs.Torch.Modules.DAC;
 
 /// <summary>
 /// Implements the Snake activation function for 1D inputs.
@@ -35,7 +35,7 @@ public class Snake1d : Module<Tensor, Tensor>
     /// Initializes Snake activation with learnable parameters
     /// </summary>
     /// <param name="channels">Number of input channels</param>
-    public Snake1d(long channels) : base("Snake1d")
+    public Snake1d(long channels) : base("Snake")
     {
         if (channels <= 0)
         {
@@ -58,13 +58,13 @@ public class Snake1d : Module<Tensor, Tensor>
     {
         if (UseGPU)
         {
-            torch.cuda.synchronize();
-            return torch.sin(x).to(torch.float32, non_blocking: false);
+            cuda.synchronize();
+            return sin(x).to(float32, non_blocking: false);
         }
         else
         {
-            var result = torch.sin(x).to(torch.float32);
-            torch.cuda.synchronize();
+            var result = sin(x).to(float32);
+            cuda.synchronize();
             return result;
         }
     }
