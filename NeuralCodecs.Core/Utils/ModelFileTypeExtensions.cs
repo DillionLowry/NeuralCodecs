@@ -30,6 +30,15 @@ namespace NeuralCodecs.Core.Utils
                 _ => ""
             };
         }
+
+        public static IEnumerable<string> GetDefaultExtensions()
+        {
+            foreach (ModelFileType fileType in Enum.GetValues(typeof(ModelFileType)))
+            {
+                yield return fileType.GetDefaultExtension();
+            }
+            
+        }
         public static string GetFileTypeDescription(this ModelFileType fileType)
         {
             return fileType switch
