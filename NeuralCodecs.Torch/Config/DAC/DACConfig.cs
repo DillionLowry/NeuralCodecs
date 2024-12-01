@@ -8,12 +8,15 @@ namespace NeuralCodecs.Torch.Config.DAC;
 
 public class DACConfig: IModelConfig
 {
+    [JsonIgnore]
     public DeviceConfiguration Device { get; set; } = DeviceConfiguration.CPU;
 
     public IDictionary<string, string> Metadata { get; set; }
+    [JsonIgnore]
     public string ModelBitrate { get; set; } = "8kbps";
+    [JsonIgnore]
     public string ModelType { get; set; } = "44khz";
-
+    [JsonIgnore]
     public string Version { get; set; } = "0.0.1";
     /// <summary>
     /// Gets or sets the architecture identifier. Default is "dac".
@@ -78,7 +81,7 @@ public class DACConfig: IModelConfig
     /// </summary>
     [JsonPropertyName("sampling_rate")]
     public int SamplingRate { get; set; } = 44100;
-
+    [JsonIgnore]
     public string Tag { get; set; } = "latest";
     [JsonPropertyName("torch_dtype")]
     public string TorchDataType { get; set; } = "float32";
@@ -100,15 +103,15 @@ public class DACConfig: IModelConfig
     public static DACConfig DAC44khz => new();
 
     // TODO
-    //[JsonIgnore]
-    //public static DACConfig DAC44khz16kbps => new()
-    //{
-    //    ModelBitrate = "16kbps",
-    //    ModelType = "44khz",
-    //    NumCodebooks = 18,
-    //    LatentDim = 128,
-    //    Version = "1.0.0"
-    //};
+    [JsonIgnore]
+    public static DACConfig DAC44khz16kbps => new()
+    {
+        ModelBitrate = "16kbps",
+        ModelType = "44khz",
+        NumCodebooks = 18,
+        LatentDim = 128,
+        Version = "1.0.0"
+    };
 
     [JsonIgnore]
     public static DACConfig DAC24khz => new()
@@ -133,34 +136,33 @@ public class DACConfig: IModelConfig
     };
 
 
-
-    public class MultiScaleSTFTLossConfig
+}
+public class MultiScaleSTFTLossConfig
+{
+    public int[] WindowLengths { get; set; } = [2048, 512];
+}
+public class MelSpectrogramLossConfig
+{
+    public int[] NMels { get; set; } = [5, 10, 20, 40, 80, 160, 320];
+    public int[] WindowLengths { get; set; } = [32, 64, 128, 256, 512, 1024, 2048];
+    public int[] MelFMin { get; set; } = [0, 0, 0, 0, 0, 0, 0];
+    public int?[] MelFMax { get; set; } = [null, null, null, null, null, null, null];
+    public float MelPow { get; set; } = 1.0f;
+    public float ClampEps { get; set; } = 1.0e-5f;
+    public float MagWeight { get; set; } = 0.0f;
+}
+public class DiscriminatorConfig
+{
+    public int SampleRate { get; set; } = 44100;
+    public int[] Rates { get; set; }
+    public int[] Periods { get; set; } = [2, 3, 5, 7, 11];
+    public int[] FFTLengths { get; set; } = [2048, 1024, 512];
+    public float[][] Bands { get; set; } = new[]
     {
-        public int[] WindowLengths { get; set; } = [2048, 512];
-    }
-    public class MelSpectrogramLossConfig
-    {
-        public int[] NMels { get; set; } = [5, 10, 20, 40, 80, 160, 320];
-        public int[] WindowLengths { get; set; } = [32, 64, 128, 256, 512, 1024, 2048];
-        public int[] MelFMin { get; set; } = [0, 0, 0, 0, 0, 0, 0];
-        public int?[] MelFMax { get; set; } = [null, null, null, null, null, null, null];
-        public float MelPow { get; set; } = 1.0f;
-        public float ClampEps { get; set; } = 1.0e-5f;
-        public float MagWeight { get; set; } = 0.0f;
-    }
-    public class DiscriminatorConfig
-    {
-        public int SampleRate { get; set; } = 44100;
-        public int[] Rates { get; set; }
-        public int[] Periods { get; set; } = [2, 3, 5, 7, 11];
-        public int[] FFTLengths { get; set; } = [2048, 1024, 512];
-        public float[][] Bands { get; set; } = new[]
-        {
             new[] { 0.0f, 0.1f },
             new[] { 0.1f, 0.25f },
             new[] { 0.25f, 0.5f },
             new[] { 0.5f, 0.75f },
             new[] { 0.75f, 1.0f }
         };
-    }
 }
