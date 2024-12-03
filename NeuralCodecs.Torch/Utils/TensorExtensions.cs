@@ -5,6 +5,10 @@ namespace NeuralCodecs.Torch.Utils;
 
 public static class TensorExtensions
 {
+    public static float[] ToFloatArray(this Tensor tensor)
+    {
+        return tensor.cpu().detach().to(torch.float32).data<float>().ToArray();
+    }
     /// <summary>
     /// Gets the dimensions of the tensor as a tuple (B, C, T)
     /// </summary>
@@ -68,5 +72,49 @@ public static class TensorExtensions
 
         // Copy wrapped portion to start
         tensor.narrow(dim, 0, shift).copy_(temp);
+    }
+    /// <summary>
+    /// Converts frequency in Hertz to Mel scale.
+    /// </summary>
+    /// <param name="hz">The frequency in Hertz</param>
+    /// <returns>The frequency in Mel scale</returns>
+    public static Tensor HertzToMel(this Tensor hz)
+    {
+        return 2595.0f * torch.log10(1.0f + hz / 700.0f);
+    }
+
+    /// <summary>
+    /// Converts frequency in Mel scale to Hertz.
+    /// </summary>
+    /// <param name="mel">The frequency in Mel scale</param>
+    /// <returns>The frequency in Hertz</returns>
+    public static Tensor MelToHertz(this Tensor mel)
+    {
+        return 700.0f * (torch.pow(10.0f, mel / 2595.0f) - 1.0f);
+    }
+    public static void WriteTensorToFile(this Tensor tensor, string filePath, int precision = 30, bool append = false, int? count = 200)
+    {
+        // Convert the tensor to an array
+        var tensorArray = tensor.clone().cpu().detach().reshape(-1).to(torch.float32).data<float>().ToArray();
+
+        // Create a format string for the specified precision
+        string format = $"F{precision}";
+
+        // Write the tensor values to the file
+        using (var writer = new StreamWriter(filePath, append))
+        {
+            Console.WriteLine($"Tensor values ({tensorArray.Length} elements), printing {Math.Min(tensorArray.Length, count.Value)} elements:");
+            if (count is not null && count < tensorArray.Length)
+            {
+                writer.Write($"{string.Join(", ", tensorArray.Take(Math.Min(tensorArray.Length, count.Value) / 2).Select(x => x.ToString(format)))}");
+                writer.WriteLine($", {string.Join(", ", tensorArray.TakeLast(Math.Min(tensorArray.Length, count.Value) / 2).Select(x => x.ToString(format)))}");
+                writer.WriteLine();
+            }
+            else
+            {
+                writer.WriteLine($"{string.Join(", ", tensorArray.Select(x => x.ToString(format)))}");
+                writer.WriteLine();
+            }
+        }
     }
 }

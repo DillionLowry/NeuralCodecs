@@ -61,7 +61,7 @@ public static class MathUtils
     /// <returns>The frequency in Mel scale</returns>
     public static double HertzToMel(double hz)
     {
-        return 2595.0 * Math.Log10(1.0 + hz / 700.0);
+        return 2595.0 * Math.Log10(1.0 + (hz / 700.0));
     }
 
     /// <summary>

@@ -283,12 +283,12 @@ public class TorchModelLoader : IModelLoader
         };
     }
 
-    private async Task<ModelMetadata?> GetRemoteModelInfo(string source)
+    private async Task<ModelMetadata?> GetRemoteModelInfo(string source, string revision = "main")
     {
         try
         {
             var modelInfo = await _repository.GetModelInfo(source);
-            var cachedPath = await _cache.GetCachedPath(source, "main");
+            var cachedPath = await _cache.GetCachedPath(source, revision);
 
             return new ModelMetadata
             {
@@ -430,11 +430,8 @@ public class TorchModelLoader : IModelLoader
         catch (Exception ex) when (ex is not LoadException)
         {
             OnError?.Invoke(this, new LoadErrorEventArgs(source, ex));
-            throw new LoadException($"Failed to load remote model: {source}. {ex.Message}", ex);
-        }
-        finally
-        {
             _cache.ClearCache(source); // Clean up failed download
+            throw new LoadException($"Failed to load remote model: {source}. {ex.Message}", ex);
         }
     }
 
