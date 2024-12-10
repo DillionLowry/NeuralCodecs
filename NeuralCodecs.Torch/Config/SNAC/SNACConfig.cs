@@ -74,7 +74,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the attention window size. Null disables attention.
     /// </summary>
     [JsonPropertyName("attn_window_size")]
-    public int? AttnWindowSize { get; set; } = 32;
+    public int? AttnWindowSize { get; set; } = null;
 
     /// <summary>
     /// Gets or sets the size of the vector quantization codebook.
