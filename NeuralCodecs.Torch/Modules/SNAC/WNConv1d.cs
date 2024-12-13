@@ -19,6 +19,7 @@ public class WNConv1d : Module<Tensor, Tensor>
     /// <summary>
     /// Weight Normalized parameters for convolution
     /// </summary>
+    // Original0 = g, Original1 = v
     private readonly ParameterDict parametrizations = [];
 
     /// <summary>
@@ -61,6 +62,7 @@ public class WNConv1d : Module<Tensor, Tensor>
         _dilation = dilation;
         _groups = groups;
 
+
         parametrizations.Add("weight.original0", new Parameter(
             empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
 
@@ -88,7 +90,9 @@ public class WNConv1d : Module<Tensor, Tensor>
             init.kaiming_uniform_(weight, Math.Sqrt(5));
 
             // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
-            var norm = weight.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
+            var norm = weight.contiguous().pow(2)
+                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+                .sqrt();
 
             parametrizations["weight.original0"].set_(norm);
             parametrizations["weight.original1"].set_(weight.div(norm.sub(1e-7f)));
@@ -118,15 +122,17 @@ public class WNConv1d : Module<Tensor, Tensor>
     public override Tensor forward(Tensor input)
     {
         using var scope = NewDisposeScope();
-        var weight_v = parametrizations["weight.original1"];
-        var weight_g = parametrizations["weight.original0"];
+        var weightV = parametrizations["weight.original1"];
+        var weightG = parametrizations["weight.original0"];
 
         // Compute L2 norm of v along [1,2] dimensions
         // The floating point difference is here, this is the closest I could get to the final memory layout and
         // operations of the native Torch calls. The operations are fused in the native code and the order of operations
         // is important. The max cumulative error over 10000 iterations should be within +/- 1e-4
-        var v_norm = weight_v.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
-        var weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+        var vNorm = weightV.contiguous().pow(2)
+            .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+            .sqrt();
+        var weight = mul(weightV.div(vNorm), weightG.sub(1e-7f)).contiguous();
 
         return functional.conv1d(
             input,
