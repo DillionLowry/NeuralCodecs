@@ -17,30 +17,33 @@ namespace NeuralCodecs.Torch.Config.DAC
 
             public CustomUnpickler(ZipArchive archive, bool skipTensorRead = false)
             {
-                _archive = archive;
+                _archive = archive ?? throw new ArgumentNullException(nameof(archive));
                 _skipTensorRead = skipTensorRead;
             }
 
             protected override object persistentLoad(object pid)
             {
-                var array = (object[])pid;
+                if (pid is not object[] array)
+                    throw new InvalidOperationException("Invalid persistent load data");
+
                 if ((string)array[0] != "storage")
-                {
                     throw new NotImplementedException("Unknown persistent id loaded");
-                }
 
                 string name = ((ClassDictConstructor)array[1]).name;
                 string archiveKey = (string)array[2];
                 var scalarType = GetScalarTypeFromStorageName(name);
 
                 var entry = _archive.Entries
-                    .Select((e, i) => (e, i))
-                    .First(e => e.e.FullName.EndsWith("data/" + archiveKey));
+                    .Select((e, i) => (Entry: e, Index: i))
+                    .FirstOrDefault(e => e.Entry.FullName.EndsWith("data/" + archiveKey));
+
+                if (entry.Entry == null)
+                    throw new InvalidOperationException($"Archive entry not found: data/{archiveKey}");
 
                 return new TensorStream
                 {
-                    ArchiveIndex = entry.i,
-                    ArchiveEntry = entry.e,
+                    ArchiveIndex = entry.Index,
+                    ArchiveEntry = entry.Entry,
                     DType = scalarType,
                     SkipTensorRead = _skipTensorRead
                 };
@@ -74,13 +77,16 @@ namespace NeuralCodecs.Torch.Config.DAC
                 var dict = new Dictionary<string, Tensor>();
                 foreach (DictionaryEntry entry in this)
                 {
+                    var key = entry.Key?.ToString() ??
+                        throw new InvalidOperationException("Null key in state dict");
+
                     if (entry.Value is Tensor tensor)
                     {
-                        dict[entry.Key.ToString()] = tensor;
+                        dict[key] = tensor;
                     }
                     else if (entry.Value is TensorConstructorArgs args)
                     {
-                        dict[entry.Key.ToString()] = args.ReadTensorFromStream();
+                        dict[key] = args.ReadTensorFromStream();
                     }
                 }
                 return dict;
@@ -88,6 +94,8 @@ namespace NeuralCodecs.Torch.Config.DAC
 
             public void __setstate__(Hashtable state)
             {
+                ArgumentNullException.ThrowIfNull(state);
+
                 foreach (DictionaryEntry entry in state)
                 {
                     this[entry.Key] = entry.Value;
@@ -181,50 +189,80 @@ namespace NeuralCodecs.Torch.Config.DAC
 
         public static DACWeights LoadFromFile(string path)
         {
+            if (string.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
+            if (!File.Exists(path))
+                throw new FileNotFoundException("Model weights file not found", path);
+
             using var stream = File.OpenRead(path);
             return LoadFromStream(stream);
         }
 
         public static DACWeights LoadFromStream(Stream stream, bool leaveOpen = false)
         {
+            ArgumentNullException.ThrowIfNull(stream);
+
+            if (!stream.CanRead)
+                throw new ArgumentException("Stream must be readable", nameof(stream));
+
             // Verify zip magic number
             byte[] magic = new byte[4];
-            stream.Read(magic, 0, 4);
+            if (stream.Read(magic, 0, 4) != 4)
+                throw new InvalidOperationException("Failed to read magic number");
+
             stream.Seek(0, SeekOrigin.Begin);
 
             if (magic[0] != 0x50 || magic[1] != 0x4B || magic[2] != 0x03 || magic[3] != 0x04)
             {
-                throw new InvalidOperationException("Invalid .pth file format - must be a zip archive");
+                throw new InvalidOperationException(
+                    "Invalid .pth file format - must be a zip archive. File may be corrupted or saved in legacy format.");
             }
 
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen);
-            var entry = archive.Entries.First(e => e.Name.EndsWith("data.pkl"));
+            var entry = archive.Entries.FirstOrDefault(e => e.Name.EndsWith("data.pkl")) ??
+                throw new InvalidOperationException("Model archive missing data.pkl");
 
             var unpickler = new CustomUnpickler(archive);
-
-            if (unpickler.load(entry.Open()) is not Hashtable result)
-                throw new InvalidOperationException("Failed to load model weights");
-
-            var weights = new DACWeights();
+            var result = unpickler.load(entry.Open()) as Hashtable ??
+                throw new InvalidOperationException("Failed to unpickle model data");
 
             // Extract state dict
-            if (result["state_dict"] is DACOrderedDict stateDict)
-            {
-                weights.StateDict = stateDict.AsTensorDict();
-            }
-            else
-            {
+            var stateDict = result["state_dict"] as DACOrderedDict ??
                 throw new InvalidOperationException("Missing or invalid state_dict");
-            }
+            var weights = stateDict.AsTensorDict();
 
             // Extract metadata
-            if (result["metadata"] is Hashtable metadata)
+            var metadata = result["metadata"] as Hashtable ??
+                throw new InvalidOperationException("Missing or invalid metadata");
+            var convertedMetadata = ConvertToMetadataDict(metadata);
+
+            return new DACWeights(weights, convertedMetadata);
+        }
+
+        public static DACConfig CreateConfigFromMetadata(DACWeights weights)
+        {
+            ArgumentNullException.ThrowIfNull(weights);
+            if (weights.Metadata is null || weights.Metadata.Count==0)
             {
-                weights.Metadata = ConvertToMetadataDict(metadata);
+                return new DACConfig();
             }
 
-            return weights;
+            return new DACConfig
+            {
+                SamplingRate = GetMetadataValue<int>(weights.Metadata, "sampling_rate", 44100),
+                EncoderDim = GetMetadataValue<int>(weights.Metadata, "encoder_dim", 64),
+                LatentDim = GetMetadataValue<int?>(weights.Metadata, "latent_dim"),
+                EncoderRates = GetMetadataValue<int[]>(weights.Metadata, "encoder_rates", [2, 4, 8, 8]),
+                DecoderRates = GetMetadataValue<int[]>(weights.Metadata, "decoder_rates", [8, 8, 4, 2]),
+                DecoderDim = GetMetadataValue<int>(weights.Metadata, "decoder_dim", 1536),
+                NumCodebooks = GetMetadataValue<int>(weights.Metadata, "n_codebooks", 9),
+                CodebookSize = GetMetadataValue<int>(weights.Metadata, "codebook_size", 4096),
+                CodebookDim = GetMetadataValue<int>(weights.Metadata, "codebook_dim", 8),
+                QuantizerDropout = GetMetadataValue<float>(weights.Metadata, "quantizer_dropout", 0.0f),
+            };
         }
+
 
         private static Dictionary<string, object> ConvertToMetadataDict(Hashtable metadata)
         {
@@ -237,7 +275,7 @@ namespace NeuralCodecs.Torch.Config.DAC
 
                 if (key == null)
                 {
-                    continue; // Skip null keys
+                    continue;
                 }
 
                 if (value is Hashtable subTable)
@@ -253,19 +291,38 @@ namespace NeuralCodecs.Torch.Config.DAC
             return dict;
         }
 
-        // Helper method to safely get metadata values
-        public static T GetMetadataValue<T>(Dictionary<string, object> metadata, string key, T defaultValue = default)
+        private static T GetMetadataValue<T>(
+                Dictionary<string, object> metadata,
+                string key,
+                T defaultValue = default)
         {
-            if (!metadata.TryGetValue(key, out object? value))
+            ArgumentNullException.ThrowIfNull(metadata);
+
+            if (string.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key));
+
+            if (!metadata.TryGetValue(key, out var value))
                 return defaultValue;
 
             try
             {
+                if (typeof(T).IsArray && value is Array arr)
+                {
+                    var elementType = typeof(T).GetElementType();
+                    var converted = Array.CreateInstance(elementType, arr.Length);
+                    for (int i = 0; i < arr.Length; i++)
+                    {
+                        converted.SetValue(Convert.ChangeType(arr.GetValue(i), elementType), i);
+                    }
+                    return (T)(object)converted;
+                }
+
                 return (T)Convert.ChangeType(value, typeof(T));
             }
-            catch
+            catch (Exception ex)
             {
-                return defaultValue;
+                throw new InvalidOperationException(
+                    $"Failed to convert metadata value for key '{key}' to type {typeof(T).Name}", ex);
             }
         }
     }
