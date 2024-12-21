@@ -1,3 +1,4 @@
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -7,20 +8,10 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 /// <summary>
 /// Implements a Weight Normalized 1D Convolution layer.
 /// Weight Normalization is a reparameterization of the weights that decouples the magnitude
-/// of those weights from their direction, simulating PyTorch's torch.nn.utils.parametrizations.weight_norm().
+/// of those weights from their direction, simulating PyTorch's deprecated torch.nn.utils.weight_norm().
 /// </summary>
 public class WNConv1d : Module<Tensor, Tensor>
 {
-    /// <summary>
-    /// Optional bias parameter
-    /// </summary>
-    private readonly Parameter bias;
-
-    /// <summary>
-    /// Weight Normalized parameters for convolution
-    /// </summary>
-    private readonly Parameter weight;
-
     /// <summary>
     /// Stride for the convolution operation
     /// </summary>
@@ -53,28 +44,36 @@ public class WNConv1d : Module<Tensor, Tensor>
     /// <param name="groups">Number of blocked connections from input channels to output channels. Default is 1.</param>
     /// <param name="useBias">If true, adds a learnable bias to the output. Default is true.</param>
     public WNConv1d(long inChannels, long outChannels, long kernelSize,
-        long stride = 1, long padding = 0, long dilation = 1, long groups = 1, bool useBias = true)
-        : base($"WNConv1d")
+        long stride = 1, long padding = 0, long dilation = 1, long groups = 1, bool useBias = true, Device device = null)
+        : base($"WNConv1d_{inChannels}_{outChannels}")
     {
         _stride = stride;
         _padding = padding;
         _dilation = dilation;
         _groups = groups;
+        device ??= torch.CPU;
 
-        parametrizations.Add("weight.original0", new Parameter(
-            empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
+        weight_v = Parameter(
+            empty([outChannels, inChannels / groups, kernelSize],
+                  device: device,
+                  dtype: float32));
 
-        parametrizations.Add("weight.original1", new Parameter(
-            empty(new long[] { outChannels, inChannels / groups, kernelSize }, dtype: float32)));
+        weight_g = Parameter(
+            ones([outChannels, 1, 1],
+                 device: device,
+                 dtype: float32));
 
         if (useBias)
         {
             bias = new Parameter(empty(outChannels, dtype: float32));
         }
-
         RegisterComponents();
         ResetParameters(useBias);
     }
+    public readonly Parameter bias;
+    public readonly Parameter weight_g;
+    public readonly Parameter weight_v;
+    public Tensor weight { get; set; }
 
     /// <summary>
     /// Resets the parameters of the layer, initializing the weights using Kaiming uniform initialization and setting the bias.
@@ -84,21 +83,23 @@ public class WNConv1d : Module<Tensor, Tensor>
     {
         using (no_grad())
         {
-            var weight = empty_like(parametrizations["weight.original1"]);
-            init.kaiming_uniform_(weight, Math.Sqrt(5));
+            weight = empty_like(weight_v);
+            init.trunc_normal_(weight, std: 0.02f);
 
-            // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
-            var norm = weight.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
+            var norm = weight_v.contiguous().pow(2)
+                       .sum([1, 2], keepdim: true, ScalarType.Float32)
+                       .sqrt();
 
-            parametrizations["weight.original0"].set_(norm);
-            parametrizations["weight.original1"].set_(weight.div(norm.sub(1e-7f)));
+            weight_g.set_(norm);
+
+            weight_v.set_(weight.div(norm.sub(1e-7f)));
 
             if (useBias)
             {
-                var fan_in = parametrizations["weight.original1"].size(1) * parametrizations["weight.original1"].size(2);
-                var bound = fan_in > 0 ?
-                            1.0 / Math.Sqrt(fan_in) :
-                            0.0;
+                init.constant_(bias, 0f);
+                var fan_in = weight_v.size(1) * weight_g.size(2);
+                var bound = 1.0 / Math.Sqrt(fan_in);
+
                 init.uniform_(bias, -bound, bound);
             }
         }
@@ -118,24 +119,17 @@ public class WNConv1d : Module<Tensor, Tensor>
     public override Tensor forward(Tensor input)
     {
         using var scope = NewDisposeScope();
-        var weight_v = parametrizations["weight.original1"];
-        var weight_g = parametrizations["weight.original0"];
 
-        // Compute L2 norm of v along [1,2] dimensions
-        // The floating point difference is here, this is the closest I could get to the final memory layout and
-        // operations of the native Torch calls. The operations are fused in the native code and the order of operations
-        // is important. The max cumulative error over 10000 iterations should be within +/- 1e-4
-        var v_norm = weight_v.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
-        var weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+        // Compute norm per output channel
+        var v_norm = weight_v.contiguous().pow(2)
+                           .sum([1, 2], keepdim: true, ScalarType.Float32)
+                           .sqrt();
 
-        return functional.conv1d(
-            input,
-            weight,
-            bias,
-            stride: _stride,
-            padding: _padding,
-            dilation: _dilation,
-            groups: _groups).MoveToOuterDisposeScope();
+        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+
+        return functional.conv1d(input, weight, bias, _stride,
+                                    _padding, _dilation, _groups)
+                                    .MoveToOuterDisposeScope();
     }
 
     // Used in the DAC Discriminator
@@ -161,8 +155,8 @@ public class WNConv1d : Module<Tensor, Tensor>
     {
         if (disposing)
         {
-            parametrizations["weight.original0"]?.Dispose();
-            parametrizations["weight.original1"]?.Dispose();
+            weight_v?.Dispose();
+            weight_g?.Dispose();
             bias?.Dispose();
         }
         base.Dispose(disposing);
