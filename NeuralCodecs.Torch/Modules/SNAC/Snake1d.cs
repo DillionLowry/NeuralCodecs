@@ -56,17 +56,17 @@ public class Snake1d : Module<Tensor, Tensor>
     /// </returns>
     private static Tensor OptimizedSin(Tensor x)
     {
-        if (UseGPU)
+        GC.Collect();
+        // For non-CUDA tensors just do simple conversion
+        if (!x.is_cuda)
         {
-            cuda.synchronize();
-            return sin(x).to(float32, non_blocking: false);
+            return torch.sin_(x);
         }
-        else
-        {
-            var result = sin(x).to(float32);
-            cuda.synchronize();
-            return result;
-        }
+
+        // For CUDA tensors, synchronize after in-place operation
+        torch.sin_(x);
+        cuda.synchronize();
+        return x;
     }
 
     /// <summary>
