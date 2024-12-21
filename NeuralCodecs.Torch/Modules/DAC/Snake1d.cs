@@ -68,7 +68,20 @@ public class Snake1d : Module<Tensor, Tensor>
             return result;
         }
     }
+    private static Tensor OptimizedSin(Tensor x)
+    {
+        GC.Collect();
+        // For non-CUDA tensors just do simple conversion
+        if (!x.is_cuda)
+        {
+            return torch.sin_(x);
+        }
 
+        // For CUDA tensors, synchronize after in-place operation
+        torch.sin_(x);
+        cuda.synchronize();
+        return x;
+    }
     /// <summary>
     /// Performs forward pass of Snake activation: x + (1/α) * sin²(αx)
     /// </summary>
