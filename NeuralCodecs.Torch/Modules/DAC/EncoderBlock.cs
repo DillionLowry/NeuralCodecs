@@ -1,5 +1,3 @@
-using NeuralCodecs.Torch.Modules;
-using NeuralCodecs.Torch.Utils;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -42,13 +40,7 @@ public class EncoderBlock : Module<Tensor, Tensor>, IDisposable
     /// </summary>
     /// <param name="x">The input tensor to process.</param>
     /// <returns>The processed output tensor.</returns>
-    public override Tensor forward(Tensor x)
-    {
-        var output = block.forward(x);
-        TensorUtils.LogTensor(tensor: output, name: $"{name}_output");
-        return output;
-
-    }
+    public override Tensor forward(Tensor x) => block.forward(x);
 
     /// <summary>
     /// Disposes the resources used by the encoder block.

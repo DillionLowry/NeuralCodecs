@@ -35,7 +35,7 @@ public class Snake1d : Module<Tensor, Tensor>
     /// Initializes Snake activation with learnable parameters
     /// </summary>
     /// <param name="channels">Number of input channels</param>
-    public Snake1d(long channels) : base("Snake")
+    public Snake1d(long channels) : base($"Snake_{channels}")
     {
         if (channels <= 0)
         {
@@ -56,20 +56,6 @@ public class Snake1d : Module<Tensor, Tensor>
     /// </returns>
     private static Tensor OptimizedSin(Tensor x)
     {
-        if (UseGPU)
-        {
-            cuda.synchronize();
-            return sin(x).to(float32, non_blocking: false);
-        }
-        else
-        {
-            var result = sin(x).to(float32);
-            cuda.synchronize();
-            return result;
-        }
-    }
-    private static Tensor OptimizedSin(Tensor x)
-    {
         GC.Collect();
         // For non-CUDA tensors just do simple conversion
         if (!x.is_cuda)
@@ -82,6 +68,7 @@ public class Snake1d : Module<Tensor, Tensor>
         cuda.synchronize();
         return x;
     }
+
     /// <summary>
     /// Performs forward pass of Snake activation: x + (1/α) * sin²(αx)
     /// </summary>
@@ -103,9 +90,9 @@ public class Snake1d : Module<Tensor, Tensor>
         var reciprocal = alpha_eps.reciprocal();
         var mul_result = reciprocal.mul(powered);
 
-        var added = reshaped.add(mul_result, alpha: 1.0f);
-
-        return added.reshape(shape).MoveToOuterDisposeScope();
+        return reshaped.add(mul_result, alpha: 1.0f)
+                        .reshape(shape)
+                        .MoveToOuterDisposeScope();
     }
 
     /// <inheritdoc/>

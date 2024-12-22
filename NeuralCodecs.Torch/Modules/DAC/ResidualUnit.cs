@@ -1,4 +1,4 @@
-﻿using NeuralCodecs.Torch.Modules;
+﻿using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -49,13 +49,14 @@ public class ResidualUnit : Module<Tensor, Tensor>
     /// </remarks>
     public override Tensor forward(Tensor x)
     {
+        using var scope = torch.NewDisposeScope();
         var y = block.forward(x);
         var pad = (int)(x.shape[^1] - y.shape[^1]) / 2;
         if (pad > 0)
         {
             x = x[.., .., pad..^pad];
         }
-        return x.add(y);
+        return x.add(y).MoveToOuterDisposeScope();
     }
 
     protected override void Dispose(bool disposing)
