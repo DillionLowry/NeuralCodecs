@@ -55,4 +55,13 @@ public class EncoderBlock : Module<Tensor, Tensor>
     /// Processed and downsampled tensor
     /// </returns>
     public override Tensor forward(Tensor x) => block.forward(x);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            block?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }

@@ -44,7 +44,7 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor zQ, List<Tensor> c
         int codebookDim = 8,
         int[] vqStrides = null) : base("RVQ")
     {
-        vqStrides ??= new[] { 1, 1, 1, 1 };
+        vqStrides ??= [1, 1, 1, 1];
 
         NumCodebooks = vqStrides.Length;
         CodebookDim = codebookDim;
@@ -66,29 +66,6 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor zQ, List<Tensor> c
     /// - zQ: Quantized tensor
     /// - codes: List of codebook indices for each quantization stage
     /// </returns>
-    //public override (Tensor zQ, List<Tensor> codes) forward(Tensor z)
-    //{
-    //    using var scope = NewDisposeScope();
-    //    z = z.to(float32).contiguous();
-    //    var zQ = zeros_like(z, dtype: z.dtype, device: z.device);
-    //    var residual = z.clone();
-    //    var codes = new List<Tensor>();
-
-    //    // Apply each quantizer to the residual
-    //    for (int i = 0; i < quantizers.Count; i++)
-    //    {
-    //        var (zQi, indicesI) = quantizers[i].forward(residual);
-
-    //        // Add quantized values and update residual
-    //        zQ = add(zQ, zQi, alpha: 1.0f);
-    //        residual = sub(residual, zQi);
-
-    //        codes.Add(indicesI.clone().MoveToOuterDisposeScope());
-    //    }
-
-    //    return (zQ.MoveToOuterDisposeScope(), codes);
-    //}
-
     public override (Tensor zQ, List<Tensor> codes) forward(Tensor z)
     {
         using var scope = NewDisposeScope();
@@ -102,10 +79,9 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor zQ, List<Tensor> c
         {
             var (zQi, indicesI) = quantizers[i].forward(residual);
 
-            // TODO Test in place operations
             // Add quantized values and update residual
-            add_(zQ, zQi, alpha: 1.0f);
-            sub_(residual, zQi);
+            zQ = add(zQ, zQi, alpha: 1.0f);
+            residual = sub(residual, zQi);
 
             codes.Add(indicesI.clone().MoveToOuterDisposeScope());
         }
@@ -156,5 +132,13 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor zQ, List<Tensor> c
         }
 
         return zQ.MoveToOuterDisposeScope();
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            quantizers?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

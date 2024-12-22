@@ -64,10 +64,10 @@ public class WNConv1d : Module<Tensor, Tensor>
 
 
         parametrizations.Add("weight.original0", new Parameter(
-            empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
+            empty([1, outChannels / groups, 1], dtype: float32)));
 
         parametrizations.Add("weight.original1", new Parameter(
-            empty(new long[] { outChannels, inChannels / groups, kernelSize }, dtype: float32)));
+            empty([outChannels, inChannels / groups, kernelSize], dtype: float32)));
 
         if (useBias)
         {
@@ -91,7 +91,7 @@ public class WNConv1d : Module<Tensor, Tensor>
 
             // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
             var norm = weight.contiguous().pow(2)
-                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+                .sum([1, 2], keepdim: true, ScalarType.Float32)
                 .sqrt();
 
             parametrizations["weight.original0"].set_(norm);
@@ -130,7 +130,7 @@ public class WNConv1d : Module<Tensor, Tensor>
         // operations of the native Torch calls. The operations are fused in the native code and the order of operations
         // is important. The max cumulative error over 10000 iterations should be within +/- 1e-4
         var vNorm = weightV.contiguous().pow(2)
-            .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+            .sum([1, 2], keepdim: true, ScalarType.Float32)
             .sqrt();
         var weight = mul(weightV.div(vNorm), weightG.sub(1e-7f)).contiguous();
 

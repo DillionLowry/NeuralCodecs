@@ -112,7 +112,7 @@ public class VectorQuantizer : Module<Tensor, (Tensor output, Tensor indices)>
     /// - Quantized vectors from the codebook
     /// - Indices of the selected codebook entries
     /// </returns>
-    private (Tensor zQ, Tensor indices) DecodeLatents(Tensor latents)
+    public (Tensor zQ, Tensor indices) DecodeLatents(Tensor latents)
     {
         using var scope = NewDisposeScope();
 
@@ -154,5 +154,16 @@ public class VectorQuantizer : Module<Tensor, (Tensor output, Tensor indices)>
         // Look up embeddings and reshape
         var embeddings = codebook.forward(indices).to(float32).contiguous();
         return embeddings.transpose(1, 2).contiguous().MoveToOuterDisposeScope();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            in_proj?.Dispose();
+            out_proj?.Dispose();
+            codebook?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

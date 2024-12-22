@@ -67,10 +67,10 @@ public class Decoder : Module<Tensor, Tensor>
         }
 
         layers.AddRange(new Module<Tensor, Tensor>[] {
-                new Snake1d(outputDim),
-                new WNConv1d(outputDim, dOut, kernelSize: 7, padding: 3),
-                Tanh()
-            });
+            new Snake1d(outputDim),
+            new WNConv1d(outputDim, dOut, kernelSize: 7, padding: 3),
+            Tanh()
+        });
 
         model = Sequential(layers);
         RegisterComponents();
@@ -84,4 +84,13 @@ public class Decoder : Module<Tensor, Tensor>
     /// Reconstructed audio signal
     /// </returns>
     public override Tensor forward(Tensor x) => model.forward(x);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            model?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }

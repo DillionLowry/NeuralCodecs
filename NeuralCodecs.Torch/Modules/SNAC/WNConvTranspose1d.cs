@@ -64,23 +64,22 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
         long dilation = 1, long groups = 1, bool useBias = true)
         : base($"WNConvTranspose1d")
     {
-        _stride = stride;
         _padding = padding;
-        _dilation = dilation;
         _groups = groups;
-        _outputPadding = outputPadding;
 
         parametrizations.Add("weight.original0", new Parameter(
-            empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
+            empty([1, outChannels / groups, 1], dtype: float32)));
 
         parametrizations.Add("weight.original1", new Parameter(
-            empty(new long[] { inChannels, outChannels / groups, kernelSize }, dtype: float32)));
+            empty([inChannels, outChannels / groups, kernelSize], dtype: float32)));
 
         if (useBias)
         {
             bias = Parameter(empty(outChannels, dtype: float32));
         }
-
+        _stride = stride;
+        _outputPadding = outputPadding;
+        _dilation = dilation;
         RegisterComponents();
         ResetParameters(useBias);
     }
@@ -99,7 +98,7 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
             init.kaiming_uniform_(weight, Math.Sqrt(5));
 
             // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
-            var norm = sqrt(weight.pow(2).sum(new long[] { 1, 2 }, keepdim: true));
+            var norm = sqrt(weight.pow(2).sum([1, 2], keepdim: true));
 
             // Set weight_g and weight_v
             parametrizations["weight.original0"].set_(norm);
@@ -129,7 +128,7 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
         var v = parametrizations["weight.original1"];
         var g = parametrizations["weight.original0"];
 
-        var v_norm = v.contiguous().pow(2).sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
+        var v_norm = v.contiguous().pow(2).sum([1, 2], keepdim: true, ScalarType.Float32).sqrt();
         var weight = mul(v.div(v_norm), g.sub(1e-7f)).contiguous();
 
         return functional.conv_transpose1d(

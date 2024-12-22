@@ -50,8 +50,9 @@ public class LocalMHA : Module<Tensor, Tensor>
         bool useRotaryPosEmb = true) : base("LocalMHA")
     {
         if (dim % (dim / dimHead) != 0)
+        {
             throw new ArgumentException($"dim {dim} must be divisible by num_heads {dim / dimHead}");
-
+        }
         norm = LayerNorm(dim);
         _numHeads = dim / dimHead;
         _windowSize = windowSize;
@@ -76,7 +77,6 @@ public class LocalMHA : Module<Tensor, Tensor>
     /// </returns>
     public override Tensor forward(Tensor x)
     {
-        Console.WriteLine($"LocalMHA forward input: {string.Join(",", x.shape)}");
         using var scope = NewDisposeScope();
 
         var (_, _, timeSteps) = x.GetDimensions();
@@ -123,7 +123,6 @@ public class LocalMHA : Module<Tensor, Tensor>
         return output.permute(0, 3, 1, 2, 4).MoveToOuterDisposeScope();
     }
 
-
     private Tensor RearrangeOutput(Tensor x)
     {
         var shape = x.shape;
@@ -133,5 +132,17 @@ public class LocalMHA : Module<Tensor, Tensor>
 
         // Reshape to (batch, window*seq, heads*dim)
         return x.reshape(shape[0], shape[2] * shape[3], shape[1] * shape[4]).MoveToOuterDisposeScope();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            norm?.Dispose();
+            to_qkv?.Dispose();
+            to_out?.Dispose();
+            rel_pos?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

@@ -104,4 +104,14 @@ public class SinusoidalEmbedding : Module<Tensor, (Tensor freqs, Tensor scale)>
 
         return (freqs.MoveToOuterDisposeScope(), scaleValues.MoveToOuterDisposeScope());
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            inv_freq?.Dispose();
+            scale?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }

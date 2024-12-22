@@ -29,7 +29,7 @@ public class Encoder : Module<Tensor, Tensor>
         bool depthwise = false,
         int? attnWindowSize = 32) : base("Encoder")
     {
-        strides ??= new[] { 3, 3, 7, 7 };
+        strides ??= [3, 3, 7, 7];
         var layers = new List<Module<Tensor, Tensor>>
             {
                 new WNConv1d(1, dModel, kernelSize: 7, padding: 3)
@@ -67,4 +67,13 @@ public class Encoder : Module<Tensor, Tensor>
     }
 
     public override Tensor forward(Tensor x) => block.forward(x);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            block?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }

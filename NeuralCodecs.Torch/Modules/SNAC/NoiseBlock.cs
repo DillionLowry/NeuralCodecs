@@ -38,7 +38,7 @@ public class NoiseBlock : Module<Tensor, Tensor>
     public override Tensor forward(Tensor x)
     {
         var (B, C, T) = (x.size(0), x.size(1), x.size(2));
-        var noise = randn(new long[] { B, 1, T }, device: x.device, dtype: x.dtype);
+        var noise = randn([B, 1, T], device: x.device, dtype: x.dtype);
         var h = linear.forward(x);
         var n = noise * h;
         return x + n;
