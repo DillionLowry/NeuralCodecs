@@ -12,16 +12,6 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 /// </summary>
 public class WNConvTranspose1d : Module<Tensor, Tensor>
 {
-    /// <summary>
-    /// Optional bias parameter
-    /// </summary>
-    private readonly Parameter bias;
-    private readonly Parameter weight_g;
-    private readonly Parameter weight_v;
-
-
-
-
     private readonly long _outputPadding;
 
     /// <summary>
@@ -58,7 +48,7 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// <param name="useBias">If true, adds a learnable bias to the output (default: true)</param>
     public WNConvTranspose1d(long inChannels, long outChannels, long kernelSize,
         long stride = 1, long padding = 0, long outputPadding = 0,
-        long dilation = 1, long groups = 1, bool useBias = true)
+        long dilation = 1, long groups = 1, bool useBias = true, Device device = null)
         : base($"conv_t")
     {
         _stride = stride;
@@ -66,20 +56,17 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
         _dilation = dilation;
         _groups = groups;
         _outputPadding = outputPadding;
+        device ??= torch.CPU;
 
-        weight_v = new Parameter(
-            empty(new long[] { inChannels, outChannels/groups, kernelSize },
-                  dtype: float32));
+        weight_v = Parameter(
+            empty([outChannels, inChannels / groups, kernelSize],
+                  dtype: float32,
+                  device: device));
 
-        // Initialize g parameter (one per output channel)
-        weight_g = new Parameter(
-            empty(new long[] { 1, outChannels, 1 }, dtype: float32));
-
-        //parametrizations.Add("weight.original0", new Parameter(
-        //    empty(new long[] { 1, outChannels / groups, 1 }, dtype: float32)));
-
-        //parametrizations.Add("weight.original1", new Parameter(
-        //    empty(new long[] { inChannels, outChannels / groups, kernelSize }, dtype: float32)));
+        weight_g = Parameter(
+            ones([outChannels, 1, 1],
+                 dtype: float32,
+                 device: device));
 
         if (useBias)
         {
@@ -91,6 +78,30 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     }
 
     /// <summary>
+    /// The learnable bias parameter for the convolution layer.
+    /// Only available when useBias is set to true during initialization.
+    /// </summary>
+    public readonly Parameter bias;
+
+    /// <summary>
+    /// The gain parameter (g) used in weight normalization.
+    /// Represents the magnitude/scale of the normalized weight vectors.
+    /// </summary>
+    public readonly Parameter weight_g;
+
+    /// <summary>
+    /// The directional weight parameter (v) used in weight normalization.
+    /// Represents the direction of the weight vectors before normalization.
+    /// </summary>
+    public readonly Parameter weight_v;
+
+    /// <summary>
+    /// The computed normalized weight tensor.
+    /// Calculated as (v * g) / ||v|| during the forward pass.
+    /// </summary>
+    public Tensor weight { get; set; }
+
+    /// <summary>
     /// Resets the parameters of the layer, initializing the weights using Kaiming uniform initialization and setting the bias.
     /// </summary>
     /// <param name="useBias">If true, initializes the bias parameter.</param>
@@ -98,25 +109,23 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     {
         using (no_grad())
         {
-            var weight = empty_like(weight_v);
-            init.kaiming_uniform_(weight, Math.Sqrt(5));
-            weight_v.set_(weight);
+            weight = empty_like(weight_v);
+            init.trunc_normal_(weight, std: 0.02f);
 
-            // Compute norm along dims [1,2] (in_channels and kernel_size) with keepdim
-            var norm = weight.contiguous().pow(2)
-                       .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+            var norm = weight_v.contiguous().pow(2)
+                       .sum([1, 2], keepdim: true, ScalarType.Float32)
                        .sqrt();
+
             weight_g.set_(norm);
 
-            //parametrizations["weight.original0"].set_(norm);
-            //parametrizations["weight.original1"].set_(weight.div(norm.sub(1e-7f)));
+            weight_v.set_(weight.div(norm.sub(1e-7f)));
 
             if (useBias)
             {
+                init.constant_(bias, 0f);
                 var fan_in = weight_v.size(1) * weight_g.size(2);
-                var bound = fan_in > 0 ?
-                            1.0 / Math.Sqrt(fan_in) :
-                            0.0;
+                var bound = 1.0 / Math.Sqrt(fan_in);
+
                 init.uniform_(bias, -bound, bound);
             }
         }
@@ -132,29 +141,24 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// </returns>
     public override Tensor forward(Tensor input)
     {
-        try
-        {
-            var vNorm = weight_v.contiguous().pow(2)
-                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
-                .sqrt();
-            var nWeight = mul(weight_v.div(vNorm), weight_g.sub(1e-7f)).contiguous();
+        using var scope = NewDisposeScope();
 
-            return functional.conv_transpose1d(
-                input,
-                nWeight,
-                bias,
+        // Compute norm per output channel
+        var v_norm = weight_v.contiguous().pow(2)
+                           .sum([1, 2], keepdim: true, ScalarType.Float32)
+                           .sqrt();
+
+        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+
+        return functional.conv_transpose1d(
+                input, weight, bias,
                 stride: _stride,
                 padding: _padding,
                 output_padding: _outputPadding,
-                groups: _groups,
-                dilation: _dilation);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+                dilation: _dilation,
+                groups: _groups).MoveToOuterDisposeScope();
     }
+
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
