@@ -7,24 +7,25 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 
 public class WNConv2d : Module<Tensor, Tensor>
 {
-    private readonly Parameter _bias;
-    private readonly ParameterDict _parametrizations = new();
-
+    /// <summary>
+    /// Stride for the convolution operation
+    /// </summary>
     private readonly (long, long) _stride;
-    private readonly (long, long) _padding;
-    private readonly long _dilation;
-    private readonly long _groups;
 
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _parametrizations["weight.original0"]?.Dispose();
-            _parametrizations["weight.original1"]?.Dispose();
-            _bias?.Dispose();
-        }
-        base.Dispose(disposing);
-    }
+    /// <summary>
+    /// Padding applied to input before convolution
+    /// </summary>
+    private readonly (long, long) _padding;
+
+    /// <summary>
+    /// Dilation factor for the convolution
+    /// </summary>
+    private readonly long _dilation;
+
+    /// <summary>
+    /// Number of groups for grouped convolution
+    /// </summary>
+    private readonly long _groups;
 
     public WNConv2d(
         long inChannels,
@@ -34,84 +35,100 @@ public class WNConv2d : Module<Tensor, Tensor>
         (long, long) padding = default,
         long dilation = 1,
         long groups = 1,
-        bool useBias = true) : base($"WNConv2d")
+        bool useBias = true,
+        Device device = null) : base($"WNConv2d_{inChannels}_{outChannels}")
     {
         if (stride == default) stride = (1, 1);
         if (padding == default) padding = (0, 0);
+        device ??= torch.CPU;
 
         _stride = stride;
         _padding = padding;
         _dilation = dilation;
         _groups = groups;
 
-        // g parameter shape: [1, outChannels/groups, 1, 1]
-        _parametrizations.Add("weight.original0", Parameter(
-            empty([1, outChannels / groups, 1, 1])));
+        weight_g = Parameter(
+            ones([1, outChannels / groups, 1, 1],
+                 dtype: float32,
+                 device: device));
 
-        // v parameter shape: [outChannels, inChannels/groups, kernelSize0, kernelSize1]
-        _parametrizations.Add("weight.original1", Parameter(
-            empty([outChannels, inChannels / groups, kernelSize.Item1, kernelSize.Item2])));
+        weight_v = Parameter(
+            empty([outChannels, inChannels / groups, kernelSize.Item1, kernelSize.Item2],
+                  dtype: float32,
+                  device: device));
 
         if (useBias)
         {
-            _bias = new Parameter(empty(outChannels, dtype: float32));
+            bias = new Parameter(empty(outChannels, dtype: float32));
         }
 
         RegisterComponents();
-        ResetParameters();
+        ResetParameters(useBias);
     }
 
-    public void ResetParameters()
+    /// <summary>
+    /// The learnable bias parameter for the convolution layer.
+    /// Only available when useBias is set to true during initialization.
+    /// </summary>
+    public readonly Parameter bias;
+
+    /// <summary>
+    /// The gain parameter (g) used in weight normalization.
+    /// Represents the magnitude/scale of the normalized weight vectors.
+    /// </summary>
+    public readonly Parameter weight_g;
+
+    /// <summary>
+    /// The directional weight parameter (v) used in weight normalization.
+    /// Represents the direction of the weight vectors before normalization.
+    /// </summary>
+    public readonly Parameter weight_v;
+
+    /// <summary>
+    /// The computed normalized weight tensor.
+    /// Calculated as (v * g) / ||v|| during the forward pass.
+    /// </summary>
+    public Tensor weight { get; set; }
+
+    private void ResetParameters(bool useBias)
     {
         using (no_grad())
         {
-            // Initialize weight_v using Kaiming initialization
-            var weight = empty_like(_parametrizations["weight.original1"]);
+            weight = empty_like(weight_v);
             init.kaiming_uniform_(weight, Math.Sqrt(5));
 
-            // Compute norm along dims [1,2,3] with keepdim
-            var norm = sqrt(weight.pow(2).sum([1, 2, 3], keepdim: true));
+            var norm = weight.pow(2).sum([1, 2, 3], keepdim: true).sqrt();
 
-            // Set weight_g and weight_v
-            _parametrizations["weight.original0"].set_(norm);
-            _parametrizations["weight.original1"].set_(weight.div(norm.add(1e-7)));
+            weight_g.set_(norm);
+            weight_v.set_(weight.div(norm.add(1e-7)));
 
-            if (_bias is not null)
+            if (useBias)
             {
-                var fanIn = _parametrizations["weight.original1"].size(1) *
-                           _parametrizations["weight.original1"].size(2) *
-                           _parametrizations["weight.original1"].size(3);
-                var bound = fanIn > 0 ?
-                            1.0 / Math.Sqrt(fanIn) :
-                            0.0;
-                init.uniform_(_bias, -bound, bound);
+                var fanIn = weight_v.size(1) * weight_v.size(2) * weight_v.size(3);
+                var bound = fanIn > 0 ? 1.0 / Math.Sqrt(fanIn) : 0.0;
+                init.uniform_(bias, -bound, bound);
             }
         }
     }
 
     public override Tensor forward(Tensor input)
     {
-        try
-        {
-            using var scope = NewDisposeScope();
-            var weight_v = _parametrizations["weight.original1"];
-            var weight_g = _parametrizations["weight.original0"];
-            var v_norm = weight_v.contiguous().pow(2).sum([1, 2, 3], keepdim: true, ScalarType.Float32).sqrt();
-            var weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
-            return functional.conv2d(
-                input,
-                weight,
-                _bias,
-                strides: [_stride.Item1, _stride.Item2],
-                padding: [_padding.Item1, _padding.Item2],
-                dilation: [_dilation, _dilation], // TODO: Check this, dilation was a single value
-                groups: _groups);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error in forward pass: {ex.Message}");
-            throw;
-        }
+        using var scope = NewDisposeScope();
+
+        var v_norm = weight_v.contiguous().pow(2)
+                            .sum([1, 2, 3], keepdim: true, ScalarType.Float32)
+                            .sqrt();
+
+        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+
+        return functional.conv2d(
+            input,
+            weight,
+            bias,
+            strides: [_stride.Item1, _stride.Item2],
+            padding: [_padding.Item1, _padding.Item2],
+            dilation: [_dilation, _dilation],
+            groups: _groups).MoveToOuterDisposeScope();
     }
 
     // Used in the DAC Discriminator
@@ -126,9 +143,21 @@ public class WNConv2d : Module<Tensor, Tensor>
         bool useBias = true,
         double negativeSlope = 0.1)
     {
+        using var scope = torch.NewDisposeScope();
         var conv = new WNConv2d(inChannels, outChannels, kernelSize,
             stride: stride, padding: padding, dilation: dilation, groups: groups, useBias);
 
         return Sequential(conv, LeakyReLU(negativeSlope));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            weight_v?.Dispose();
+            weight_g?.Dispose();
+            bias?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

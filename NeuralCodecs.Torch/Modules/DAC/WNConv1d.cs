@@ -55,13 +55,13 @@ public class WNConv1d : Module<Tensor, Tensor>
 
         weight_v = Parameter(
             empty([outChannels, inChannels / groups, kernelSize],
-                  device: device,
-                  dtype: float32));
+                  dtype: float32,
+                  device: device));
 
         weight_g = Parameter(
             ones([outChannels, 1, 1],
-                 device: device,
-                 dtype: float32));
+                 dtype: float32,
+                 device: device));
 
         if (useBias)
         {
@@ -70,9 +70,29 @@ public class WNConv1d : Module<Tensor, Tensor>
         RegisterComponents();
         ResetParameters(useBias);
     }
+
+    /// <summary>
+    /// The learnable bias parameter for the convolution layer.
+    /// Only available when useBias is set to true during initialization.
+    /// </summary>
     public readonly Parameter bias;
+
+    /// <summary>
+    /// The gain parameter (g) used in weight normalization.
+    /// Represents the magnitude/scale of the normalized weight vectors.
+    /// </summary>
     public readonly Parameter weight_g;
+
+    /// <summary>
+    /// The directional weight parameter (v) used in weight normalization.
+    /// Represents the direction of the weight vectors before normalization.
+    /// </summary>
     public readonly Parameter weight_v;
+
+    /// <summary>
+    /// The computed normalized weight tensor.
+    /// Calculated as (v * g) / ||v|| during the forward pass.
+    /// </summary>
     public Tensor weight { get; set; }
 
     /// <summary>
