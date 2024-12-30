@@ -26,10 +26,7 @@ public class Snake1d : Module<Tensor, Tensor>
     /// </summary>
     private const float EPSILON = 1e-9f;
 
-    /// <summary>
-    /// Flag indicating GPU availability for optimized computation paths
-    /// </summary>
-    private static readonly bool UseGPU = cuda.is_available();
+    private bool _disposed;
 
     /// <summary>
     /// Initializes Snake activation with learnable parameters
@@ -98,10 +95,20 @@ public class Snake1d : Module<Tensor, Tensor>
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!_disposed)
         {
-            alpha?.Dispose();
+            if (disposing)
+            {
+                alpha?.Dispose();
+            }
+            base.Dispose(disposing);
+            _disposed = true;
         }
-        base.Dispose(disposing);
+    }
+
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }

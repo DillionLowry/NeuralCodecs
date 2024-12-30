@@ -7,31 +7,52 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 
 public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitmentLoss, Tensor codebookLoss, Tensor indices, Tensor latents)>
 {
-    private readonly int codebookSize;
-    private readonly int codebookDim;
+    /// <summary>
+    /// Number of entries in the codebook
+    /// </summary>
+    private readonly int _codebookSize;
 
-    //private readonly bool quantizerDropout;
-    private readonly Linear _projection;
-
-    private readonly Embedding codebook;
-    private readonly float _beta = 0.25f;
+    /// <summary>
+    /// Projects input to codebook dimension space
+    /// </summary>
     private readonly WNConv1d in_proj;
+
+    /// <summary>
+    /// Projects quantized vectors back to input dimension space
+    /// </summary>
     private readonly WNConv1d out_proj;
-    // TODO: OPTIONAL LOSS
+
+    /// <summary>
+    /// Learnable codebook of embedding vectors
+    /// </summary>
+    private readonly Embedding codebook;
+
+    private bool _disposed;
+
+    public int CodebookDim { get; }
 
     public VectorQuantizer(int inputDim, int codebookSize, int codebookDim)
         : base($"VQ_{codebookSize}_{codebookDim}")
     {
-        codebookSize = codebookSize;
-        codebookDim = codebookDim;
+        _codebookSize = codebookSize;
+        CodebookDim = codebookDim;
 
         in_proj = new WNConv1d(inputDim, codebookDim, kernelSize: 1);
         out_proj = new WNConv1d(codebookDim, inputDim, kernelSize: 1);
-        _projection = Linear(inputDim, codebookDim);
         codebook = Embedding(codebookSize, codebookDim);
 
         RegisterComponents();
     }
+
+    /// <summary>
+    /// Projects input tensor through input projection layer
+    /// </summary>
+    public Tensor InProj(Tensor x) => in_proj.forward(x);
+
+    /// <summary>
+    /// Projects tensor through output projection layer
+    /// </summary>
+    public Tensor OutProj(Tensor x) => out_proj.forward(x);
 
     public override (Tensor quantized, Tensor commitmentLoss, Tensor codebookLoss, Tensor indices, Tensor latents)
       forward(Tensor z)
@@ -46,9 +67,9 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
 
         // Calculate losses
         var commitmentLoss = F.mse_loss(zE, zQ.detach(), reduction: Reduction.None)
-            .mean(new long[] { 1, 2 });
+            .mean([1, 2]);
         var codebookLoss = F.mse_loss(zQ, zE.detach(), reduction: Reduction.None)
-            .mean(new long[] { 1, 2 });
+            .mean([1, 2]);
 
         zQ = zE + (zQ - zE).detach(); // Straight-through gradient estimator
         zQ = out_proj.forward(zQ);
@@ -67,18 +88,14 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
     /// Uses efficient L2 distance computation via matrix multiplication.
     /// </summary>
     /// <param name="latents">Input continuous vectors to be quantized</param>
-    /// <returns>
-    /// Tuple containing:
-    /// - Quantized vectors from the codebook
-    /// - Indices of the selected codebook entries
-    /// </returns>
-    private (Tensor zQ, Tensor indices) DecodeLatents(Tensor latents)
+    /// <returns>Tuple of quantized vectors and codebook indices</returns>
+    public (Tensor zQ, Tensor indices) DecodeLatents(Tensor latents)
     {
         using var scope = NewDisposeScope();
 
         // Reshape to (batch * time, dim)
         var shape = latents.shape;
-        var encodings = latents.transpose(1, 2).reshape(-1, codebookDim).to(float32).contiguous();
+        var encodings = latents.transpose(1, 2).reshape(-1, CodebookDim).to(float32).contiguous();
 
         var codebookWeight = codebook.weight?.to(float32).contiguous() ?? throw new InvalidOperationException("Codebook weight is null");
 
@@ -93,14 +110,8 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
         // Compute distances
         var dist = encodingsSquared + codebookSquared.t() - crossTerms;
 
-        // TODO: test euclidean distance
-        //var encodingsSquared = encodings.pow(2).sum(1, keepdim: true);
-        //var codebookSquared = codebookWeight.pow(2).sum(1, keepdim: true);
-        //var dist = encodingsSquared - 2 * torch.mm(encodings, codebookWeight.t())
-        //          + codebookSquared.t();
-
         // Get nearest codebook entries
-        var indices = dist.argmin(1).reshape(shape[0], shape[2]);
+        var indices = dist.argmin(1).reshape(shape[0], shape[^1]).to(int64);
 
         var zQ = DecodeCode(indices);
         return (zQ.MoveToOuterDisposeScope(), indices.MoveToOuterDisposeScope());
@@ -113,69 +124,33 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
     /// <returns>
     /// Tensor of continuous vectors with shape (batch, codebook_dim, time)
     /// representing the corresponding codebook entries
-    /// </returns
+    /// </returns>
     public Tensor DecodeCode(Tensor indices)
     {
         using var scope = NewDisposeScope();
         // Look up embeddings and reshape
-        var embeddings = codebook.forward(indices).to(float32).contiguous();
-        return embeddings.transpose(1, 2).contiguous().MoveToOuterDisposeScope();
+        var embeddings = codebook.forward(indices).contiguous();
+        return embeddings.transpose(-2, -1).contiguous().MoveToOuterDisposeScope();
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!_disposed)
         {
-            in_proj?.Dispose();
-            out_proj?.Dispose();
-            codebook?.Dispose();
+            if (disposing)
+            {
+                in_proj?.Dispose();
+                out_proj?.Dispose();
+                codebook?.Dispose();
+            }
+            base.Dispose(disposing);
+            _disposed = true;
         }
-        base.Dispose(disposing);
     }
-    //public override (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
-    //    forward(Tensor z)
-    //{
-    //    using var scope = NewDisposeScope();
 
-    //    // Project input to codebook dimension
-    //    var shape = z.shape;
-    //    var flatZ = z.transpose(-2, -1).reshape(-1, shape[1]);
-    //    var latents = projection.forward(flatZ);
-
-    //    // Calculate distances to codebook entries
-    //    var flatLatents = latents.unsqueeze(1);
-    //    var codebookSquared = codebook.weight.pow(2).sum(-1, keepdim: true);
-    //    var latentsSquared = flatLatents.pow(2).sum(-1, keepdim: true);
-
-    //    var distances = latentsSquared + codebookSquared.transpose(-2, -1)
-    //        - 2 * torch.matmul(flatLatents, codebook.weight.transpose(-2, -1));
-
-    //    // Get nearest codebook entries
-    //    var indices = distances.argmin(-1);
-    //    var quantized = codebook.forward(indices);
-
-    //    // Reshape back to input shape
-    //    quantized = quantized.view(shape[0], -1, shape[1]).transpose(-2, -1);
-
-    //    // Calculate losses
-    //    var commitmentLoss = torch.nn.functional.mse_loss(quantized, z.detach());
-    //    var codebookLoss = torch.nn.functional.mse_loss(quantized.detach(), z);
-
-    //    // Straight-through estimator
-    //    quantized = z + (quantized - z).detach();
-
-    //    if (quantizerDropout && this.training)
-    //    {
-    //        var mask = torch.bernoulli(torch.full_like(quantized, 0.1f));
-    //        quantized = quantized * (1 - mask);
-    //    }
-
-    //    return (
-    //        quantized.MoveToOuterDisposeScope(),
-    //        indices.MoveToOuterDisposeScope(),
-    //        latents.MoveToOuterDisposeScope(),
-    //        commitmentLoss.MoveToOuterDisposeScope(),
-    //        codebookLoss.MoveToOuterDisposeScope()
-    //    );
-    //}
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
 }

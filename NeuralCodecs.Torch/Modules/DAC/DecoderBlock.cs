@@ -11,7 +11,7 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 public class DecoderBlock : Module<Tensor, Tensor>, IDisposable
 {
     private readonly Sequential block;
-    private bool disposedValue;
+    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the DecoderBlock class.
@@ -51,13 +51,13 @@ public class DecoderBlock : Module<Tensor, Tensor>, IDisposable
     /// <param name="disposing">True to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        if (!disposedValue)
+        if (!_disposed)
         {
             if (disposing)
             {
                 block.Dispose();
             }
-            disposedValue = true;
+            _disposed = true;
         }
     }
 

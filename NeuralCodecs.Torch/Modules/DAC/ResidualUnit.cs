@@ -16,6 +16,8 @@ public class ResidualUnit : Module<Tensor, Tensor>
     /// </summary>
     private readonly Sequential block;
 
+    private bool _disposed;
+
     /// <summary>
     /// Initializes a new instance of the ResidualUnit class
     /// </summary>
@@ -61,10 +63,14 @@ public class ResidualUnit : Module<Tensor, Tensor>
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!_disposed)
         {
-            block?.Dispose();
+            if (disposing)
+            {
+                block?.Dispose();
+            }
+            base.Dispose(disposing);
+            _disposed = true;
         }
-        base.Dispose(disposing);
     }
 }

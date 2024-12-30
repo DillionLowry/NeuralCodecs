@@ -12,7 +12,7 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 public class Decoder : Module<Tensor, Tensor>, IDisposable
 {
     private readonly Sequential model;
-    private bool disposed;
+    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the Decoder class.
@@ -64,11 +64,11 @@ public class Decoder : Module<Tensor, Tensor>, IDisposable
     /// </summary>
     public new void Dispose()
     {
-        if (!disposed)
+        if (!_disposed)
         {
             model?.Dispose();
             base.Dispose();
-            disposed = true;
+            _disposed = true;
         }
         GC.SuppressFinalize(this);
     }
