@@ -3,6 +3,7 @@ using Razorvine.Pickle.Objects;
 using System.Collections;
 using System.IO.Compression;
 using TorchSharp;
+using TorchSharp.PyBridge;
 using static TorchSharp.torch;
 
 // Based on TorchSharp.PyBridge.PytorchUnpickler
@@ -195,8 +196,25 @@ namespace NeuralCodecs.Torch.Config.DAC
             if (!File.Exists(path))
                 throw new FileNotFoundException("Model weights file not found", path);
 
-            using var stream = File.OpenRead(path);
-            return LoadFromStream(stream);
+            // Handle different file formats
+            if (path.EndsWith(".safetensors"))
+                return LoadFromSafetensors(path);
+
+            return LoadFromStream(File.OpenRead(path));
+        }
+
+        public static DACWeights LoadFromSafetensors(string path)
+        {
+            var stateDict = Safetensors.LoadStateDict(path) ??
+                throw new InvalidOperationException("Failed to load safetensor weights");
+
+            // Convert weights using dynamic converter
+            var normalizedDict = StateDictNameConverter.ConvertStateDict(stateDict, fromSafetensor: true);
+
+            // Verify all required weights are present
+            //StateDictNameConverter.VerifyWeights(normalizedDict);
+
+            return new DACWeights(normalizedDict);
         }
 
         public static DACWeights LoadFromStream(Stream stream, bool leaveOpen = false)
@@ -240,10 +258,17 @@ namespace NeuralCodecs.Torch.Config.DAC
             return new DACWeights(weights, convertedMetadata);
         }
 
+        public static (DACWeights Weights, DACConfig Config) LoadWithConfig(string path)
+        {
+            var weights = LoadFromFile(path);
+            var config = CreateConfigFromMetadata(weights);
+            return (weights, config);
+        }
+
         public static DACConfig CreateConfigFromMetadata(DACWeights weights)
         {
             ArgumentNullException.ThrowIfNull(weights);
-            if (weights.Metadata is null || weights.Metadata.Count==0)
+            if (weights.Metadata is null || weights.Metadata.Count == 0)
             {
                 return new DACConfig();
             }
@@ -262,7 +287,6 @@ namespace NeuralCodecs.Torch.Config.DAC
                 QuantizerDropout = GetMetadataValue<float>(weights.Metadata, "quantizer_dropout", 0.0f),
             };
         }
-
 
         private static Dictionary<string, object> ConvertToMetadataDict(Hashtable metadata)
         {
