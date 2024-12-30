@@ -99,6 +99,8 @@ public class DACConfig: IModelConfig
     [JsonPropertyName("latent_dim")]
     public int? LatentDim { get; set; } = null;
 
+    public int ChunkSeconds { get; set; } = 10;  // Default 10 second chunks
+
     [JsonIgnore]
     public static DACConfig DAC44khz => new();
 
@@ -119,8 +121,8 @@ public class DACConfig: IModelConfig
         SamplingRate = 24000,
         ModelType = "24khz",
         NumCodebooks = 32,
-        EncoderRates = new[] { 2, 4, 5, 8 },
-        DecoderRates = new[] { 8, 5, 4, 2 },
+        EncoderRates = [2, 4, 5, 8],
+        DecoderRates = [8, 5, 4, 2],
         Version = "0.0.4"
     };
 
@@ -130,8 +132,8 @@ public class DACConfig: IModelConfig
         SamplingRate = 16000,
         ModelType = "16khz",
         NumCodebooks = 12,
-        EncoderRates = new[] { 2, 4, 5, 8 },
-        DecoderRates = new[] { 8, 5, 4, 2 },
+        EncoderRates = [2, 4, 5, 8],
+        DecoderRates = [8, 5, 4, 2],
         Version = "0.0.5"
     };
 
@@ -157,12 +159,12 @@ public class DiscriminatorConfig
     public int[] Rates { get; set; }
     public int[] Periods { get; set; } = [2, 3, 5, 7, 11];
     public int[] FFTLengths { get; set; } = [2048, 1024, 512];
-    public float[][] Bands { get; set; } = new[]
-    {
-            new[] { 0.0f, 0.1f },
-            new[] { 0.1f, 0.25f },
-            new[] { 0.25f, 0.5f },
-            new[] { 0.5f, 0.75f },
-            new[] { 0.75f, 1.0f }
-        };
+    public float[][] Bands { get; set; } =
+    [
+            [0.0f, 0.1f],
+            [0.1f, 0.25f],
+            [0.25f, 0.5f],
+            [0.5f, 0.75f],
+            [0.75f, 1.0f]
+        ];
 }
