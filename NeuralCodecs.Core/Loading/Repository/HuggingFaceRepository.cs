@@ -14,6 +14,7 @@ namespace NeuralCodecs.Core.Loading.Repository
         private const string API_BASE = "https://huggingface.co/api";
         private const string REPO_BASE = "https://huggingface.co";
         private const int DEFAULT_TIMEOUT_SECONDS = 300;
+        private readonly string[] _allowedFilePatterns = ["*.bin", "*.pt", "*.pth", "*.json"];
         private bool disposedValue;
 
         /// <summary>
