@@ -49,5 +49,7 @@ namespace NeuralCodecs.Core.Loading
         /// Gets or sets the filename of the model's configuration file.
         /// </summary>
         public string ConfigFileName { get; set; }
+
+        public string Description { get; internal set; }
     }
 }

@@ -8,6 +8,10 @@
 	  <AssemblyName>NeuralCodecs.Core</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="Utils\TensorUtils.cs" />
+  </ItemGroup>
+
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>NeuralCodecs.Torch</_Parameter1>
