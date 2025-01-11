@@ -1,9 +1,4 @@
 ﻿using NeuralCodecs.Core.Configuration;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using TorchSharp;
 using static TorchSharp.torch;
 using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
@@ -22,6 +17,5 @@ namespace NeuralCodecs.Torch.Utils
                 _ => torch.CPU
             };
         }
-
     }
 }

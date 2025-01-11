@@ -1,17 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using static TorchSharp.torch.nn;
-using static TorchSharp.torch;
-using TorchSharp.Modules;
 using TorchSharp;
-using System.Text.Json;
-using static NeuralCodecs.Torch.Modules.DAC.Encoder;
-using NAudio.CoreAudioApi;
+using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Utils;
+
 public static class TensorUtils
 {
     public static Tensor AudioToTensor(float[] audioData, int batchSize = 1, int channels = 1, torch.Device device = null)
@@ -31,23 +22,6 @@ public static class TensorUtils
         return tensor.MoveToOuterDisposeScope();
     }
 
-    //public static void ValidateShape(
-    //    string name,
-    //    Tensor tensor,
-    //    long[] expectedShape)
-    //{
-    //    if (tensor.shape.Length != expectedShape.Length)
-    //        throw new ArgumentException(
-    //            $"Shape mismatch for {name}: expected {expectedShape.Length}D tensor");
-
-    //    for (int i = 0; i < expectedShape.Length; i++)
-    //    {
-    //        if (expectedShape[i] != -1 && expectedShape[i] != tensor.shape[i])
-    //            throw new ArgumentException(
-    //                $"Shape mismatch for {name} at dim {i}: " +
-    //                $"expected {expectedShape[i]}, got {tensor.shape[i]}");
-    //    }
-    //}
     public static void ValidateShape(string name, Tensor tensor, long[] expectedShape)
     {
         var actualShape = tensor.shape;
@@ -99,11 +73,13 @@ public static class TensorUtils
             }
         }
     }
+
     public static void LogTensor(Tensor tensor, string name)
     {
         Console.WriteLine($"{name} shape: {string.Join(", ", tensor.shape)}");
         tensor.WriteTensorToFile($"{name}.txt", count: 5000);
     }
+
     public static float[] Normalize(float[] input, float epsilon = 1e-5f)
     {
         float mean = 0;

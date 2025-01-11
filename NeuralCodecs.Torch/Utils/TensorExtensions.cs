@@ -9,6 +9,7 @@ public static class TensorExtensions
     {
         return tensor.cpu().detach().to(torch.float32).data<float>().ToArray();
     }
+
     /// <summary>
     /// Gets the dimensions of the tensor as a tuple (B, C, T)
     /// </summary>
@@ -51,6 +52,7 @@ public static class TensorExtensions
         using var scope = torch.NewDisposeScope();
         return tensor.detach().MoveToOuterDisposeScope();
     }
+
     /// <summary>
     /// Implements in-place rolling (Torch roll_) for the last dimension
     /// </summary>
@@ -73,6 +75,7 @@ public static class TensorExtensions
         // Copy wrapped portion to start
         tensor.narrow(dim, 0, shift).copy_(temp);
     }
+
     /// <summary>
     /// Converts frequency in Hertz to Mel scale.
     /// </summary>
@@ -92,6 +95,7 @@ public static class TensorExtensions
     {
         return 700.0f * (torch.pow(10.0f, mel / 2595.0f) - 1.0f);
     }
+
     public static void WriteTensorToFile(this Tensor tensor, string filePath, int precision = 30, bool append = false, int? count = 200)
     {
         // Convert the tensor to an array

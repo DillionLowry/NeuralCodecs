@@ -1,6 +1,6 @@
 namespace NeuralCodecs.Core.Utils
 {
-    internal static class TensorUtils
+    public static partial class TensorUtils
     {
         public static float[] Normalize(float[] input, float epsilon = 1e-5f)
         {
