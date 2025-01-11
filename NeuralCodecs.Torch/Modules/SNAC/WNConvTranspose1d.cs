@@ -138,8 +138,8 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
             stride: _stride,
             padding: _padding,
             output_padding: _outputPadding,
-            groups: _groups,
-            dilation: _dilation);
+            dilation: _dilation,
+            groups: _groups);
     }
 
     /// <inheritdoc/>

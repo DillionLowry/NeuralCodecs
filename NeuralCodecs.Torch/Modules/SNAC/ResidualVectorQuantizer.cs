@@ -103,7 +103,7 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor zQ, List<Tensor> c
         if (codes.Count != NumCodebooks)
             throw new ArgumentException($"Expected {NumCodebooks} codebooks but got {codes.Count}");
 
-        var zQ = zeros(1, device: codes[0].device, dtype: codes[0].dtype);
+        var zQ = zeros(1, dtype: codes[0].dtype, device: codes[0].device);
         bool first = true;
 
         for (int i = 0; i < NumCodebooks; i++)
