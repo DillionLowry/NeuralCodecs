@@ -14,7 +14,6 @@ namespace NeuralCodecs.Core.Loading.Repository
         private const string API_BASE = "https://huggingface.co/api";
         private const string REPO_BASE = "https://huggingface.co";
         private const int DEFAULT_TIMEOUT_SECONDS = 300;
-        private readonly string[] _allowedFilePatterns = new[] { "*.bin", "*.pt", "*.pth", "*.json" };
         private bool disposedValue;
 
         /// <summary>
@@ -85,9 +84,8 @@ namespace NeuralCodecs.Core.Loading.Repository
             {
                 var metadata = await GetRepositoryMetadata(modelId);
                 // Find model file
-                var modelFile = metadata.Files.FirstOrDefault(f =>
-                    Path.GetExtension(f.Path) is ".bin" or ".pt" or ".pth");
-
+                var modelFile = metadata.Files.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
+            
                 if (modelFile == null)
                 {
                     throw new LoadException($"No model file found in repository: {modelId}");
@@ -132,16 +130,14 @@ namespace NeuralCodecs.Core.Loading.Repository
         /// <param name="targetPath">The local directory path where the model should be downloaded.</param>
         /// <param name="progress">An IProgress object to report download progress.</param>
         /// <exception cref="LoadException">Thrown when the download fails or validation errors occur.</exception>
-        public async Task DownloadModel(string modelId, string targetPath, IProgress<double> progress)
+        public async Task DownloadModel(string modelId, string targetPath, IProgress<double> progress, ModelLoadOptions options)
         {
 
             try
             {
                 var files = await GetRepositoryFiles(modelId, "main");
-                var filesToDownload = files.Where(f =>
-                    _allowedFilePatterns.Any(p =>
-                        new WildcardPattern(p).IsMatch(f.Path))).ToList();
-
+                var exts = ModelFileTypeExtensions.GetDefaultExtensions();
+                var filesToDownload = files.Where(f => exts.Any(ext => f.Path.EndsWith(ext))).ToList();
                 var totalSize = filesToDownload.Sum(f => f.Size);
                 var downloadedSize = 0L;
                 foreach (var file in filesToDownload)
@@ -156,8 +152,8 @@ namespace NeuralCodecs.Core.Loading.Repository
                         progress.Report((double)downloadedSize / totalSize);
                     }));
                 }
-
-                await ValidateDownload(targetPath, filesToDownload);
+                
+                await ValidateDownload(targetPath, filesToDownload, options);
             }
             catch (Exception ex)
             {
@@ -276,21 +272,20 @@ namespace NeuralCodecs.Core.Loading.Repository
             }
         }
 
-        private async Task ValidateDownload(string targetDir, List<RepositoryFile> expectedFiles)
+        private async Task ValidateDownload(string targetDir, List<RepositoryFile> expectedFiles, ModelLoadOptions options)
         {
             // Verify all required files exist
             var missingFiles = expectedFiles.Where(f =>
                 !File.Exists(Path.Combine(targetDir, f.Path))).ToList();
 
-            if (missingFiles.Any())
+            if (missingFiles.Count != 0)
             {
                 throw new LoadException(
                     $"Missing files after download: {string.Join(", ", missingFiles.Select(f => f.Path))}");
             }
 
             // Verify model file exists
-            var modelFile = expectedFiles.FirstOrDefault(f =>
-                Path.GetExtension(f.Path) is ".bin" or ".pt" or ".pth");
+            var modelFile = expectedFiles.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
 
             if (modelFile == null)
             {
@@ -299,14 +294,17 @@ namespace NeuralCodecs.Core.Loading.Repository
 
             var modelPath = Path.Combine(targetDir, modelFile.Path);
 
-            // Verify config exists
-            var configPath = Path.Combine(targetDir, "config.json");
-            if (!File.Exists(configPath))
+            if (options.HasConfigFile)
             {
-                configPath = Path.ChangeExtension(modelPath, ".json");
+                // Verify config exists
+                var configPath = Path.Combine(targetDir, "config.json");
                 if (!File.Exists(configPath))
                 {
-                    throw new LoadException("Config file missing from download");
+                    configPath = Path.ChangeExtension(modelPath, ".json");
+                    if (!File.Exists(configPath))
+                    {
+                        throw new LoadException("Config file missing from download");
+                    }
                 }
             }
 
@@ -325,28 +323,17 @@ namespace NeuralCodecs.Core.Loading.Repository
             }
 
             // Verify model file format
-            try
+            if (options.ValidateModel)
             {
-                var modelBytes = await File.ReadAllBytesAsync(modelPath);
-                if (!IsPyTorchModelFile(modelBytes))
+                var fileType = await FileUtil.DetectFileTypeFromContentsAsync(modelPath);
+
+                if (fileType is ModelFileType.Unknown)
                 {
-                    throw new LoadException("Invalid PyTorch model file format");
+                    throw new LoadException("Failed to validate model file type");
                 }
             }
-            catch (Exception ex)
-            {
-                throw new LoadException("Failed to validate model file", ex);
-            }
         }
 
-        private bool IsPyTorchModelFile(byte[] bytes)
-        {
-            if (bytes.Length < 8) return false;
-
-            // Look for common PyTorch model signatures
-            return bytes[0] == 0x80 && bytes[1] == 0x02 || // Pickle protocol
-                   bytes[0] == 'P' && bytes[1] == 'K';     // ZIP archive
-        }
 
         protected virtual void Dispose(bool disposing)
         {
