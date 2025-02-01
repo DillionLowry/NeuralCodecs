@@ -26,6 +26,6 @@
         /// <param name="modelId">The identifier of the model to download.</param>
         /// <param name="targetPath">The local path where the model should be saved.</param>
         /// <param name="progress">A progress reporter for download status.</param>
-        Task DownloadModel(string modelId, string targetPath, IProgress<double> progress);
+        Task DownloadModel(string modelId, string targetPath, IProgress<double> progress, ModelLoadOptions options);
     }
 }
