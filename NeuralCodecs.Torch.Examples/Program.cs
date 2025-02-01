@@ -1,4 +1,5 @@
 ﻿using NAudio.Wave;
+using NeuralCodecs.Torch.Config.SNAC;
 
 namespace NeuralCodecs.Torch.Examples
 {
@@ -11,7 +12,7 @@ namespace NeuralCodecs.Torch.Examples
             {
                 modelPath = "hubertsiuzdak/snac_24khz"; // Download from huggingface
                 inputAudioPath = "en_sample.wav";
-                outputAudioPath = "output_f.wav";
+                outputAudioPath = "output.wav";
             }
             else
             {
@@ -22,7 +23,8 @@ namespace NeuralCodecs.Torch.Examples
 
             try
             {
-                await EncodeDecodeAudio(modelPath, inputAudioPath, outputAudioPath);
+                var config = SNACConfig.SNAC24Khz;
+                await SNACEncodeDecode(modelPath, inputAudioPath, outputAudioPath, config);
             }
             catch (Exception ex)
             {
@@ -31,57 +33,91 @@ namespace NeuralCodecs.Torch.Examples
             }
         }
 
-        public static async Task EncodeDecodeAudio(string modelPath, string inputPath, string outputPath)
+        public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config)
         {
-            var model = await NeuralCodecs.CreateSNACAsync(modelPath, SNACConfig.SNAC24Khz);
+            var model = await NeuralCodecs.CreateSNACAsync(modelPath, config);
+            var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
 
-            using var audioFile = new AudioFileReader(inputPath);
+            Console.WriteLine("Encoding audio...");
+            var codes = model.Encode(buffer);
+
+            Console.WriteLine("Decoding codes...");
+            var processedAudio = model.Decode(codes);
+
+            Console.WriteLine("Saving output...");
+            SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
+        }
+
+        public static float[] LoadAudio(string path, int targetSampleRate)
+        {
+            using var audioFile = new AudioFileReader(path);
             var buffer = new List<float>();
             var readBuffer = new float[audioFile.WaveFormat.SampleRate * 4];
             int samplesRead;
-
             while ((samplesRead = audioFile.Read(readBuffer, 0, readBuffer.Length)) > 0)
             {
                 buffer.AddRange(readBuffer.Take(samplesRead));
             }
-            // Convert to mono if stereo
+            // Convert to mono, resample if necessary
             if (audioFile.WaveFormat.Channels > 1)
             {
-                var monoBuffer = new List<float>();
-                for (int i = 0; i < buffer.Count; i += audioFile.WaveFormat.Channels)
+                buffer = ConvertToMono(buffer, audioFile.WaveFormat.Channels);
+            }
+            if (audioFile.WaveFormat.SampleRate != targetSampleRate)
+            {
+                buffer = Resample(buffer.ToArray(), audioFile.WaveFormat.SampleRate, targetSampleRate).ToList();
+            }
+            return buffer.ToArray();
+        }
+
+        public static void SaveAudio(string path, float[] buffer, int sampleRate)
+        {
+            using var writer = new WaveFileWriter(
+                path,
+                new WaveFormat(sampleRate, 1)
+            );
+            writer.WriteSamples(buffer, 0, buffer.Length);
+        }
+
+        public static List<float> ConvertToMono(List<float> input, int channels)
+        {
+            var monoBuffer = new List<float>();
+            for (int i = 0; i < input.Count; i += channels)
+            {
+                float sum = 0;
+                for (int ch = 0; ch < channels; ch++)
                 {
-                    float sum = 0;
-                    for (int ch = 0; ch < audioFile.WaveFormat.Channels; ch++)
-                    {
-                        sum += buffer[i + ch];
-                    }
-                    monoBuffer.Add(sum / audioFile.WaveFormat.Channels);
+                    sum += input[i + ch];
                 }
-                buffer = monoBuffer;
+                monoBuffer.Add(sum / channels);
+            }
+            return monoBuffer;
+        }
+
+        private static float[] Resample(float[] input, int sourceSampleRate, int targetSampleRate)
+        {
+            var ratio = (double)targetSampleRate / sourceSampleRate;
+            var outputLength = (int)(input.Length * ratio);
+            var output = new float[outputLength];
+
+            for (int i = 0; i < outputLength; i++)
+            {
+                var position = i / ratio;
+                var index = (int)position;
+                var fraction = position - index;
+
+                if (index >= input.Length - 1)
+                {
+                    output[i] = input[input.Length - 1];
+                }
+                else
+                {
+                    output[i] = (float)((1 - fraction) * input[index] +
+                               (fraction * input[index + 1]));
+                }
             }
 
-            //Process audio
-            //Console.WriteLine("Processing audio...");
-            //var processedAudio = model.ProcessAudio(
-            //    [.. buffer],
-            //    audioFile.WaveFormat.SampleRate
-            //);
-
-
-            Console.WriteLine("Encoding audio...");
-            var codes = model.Encode(buffer.ToArray());
-
-            Console.WriteLine("Decoding audio...");
-            var processedAudio = model.Decode(codes);
-            
-
-            // Save output
-            Console.WriteLine("Saving output...");
-            await using var writer = new WaveFileWriter(
-                outputPath,
-                new WaveFormat(model.Config.SamplingRate, 1)
-            );
-            writer.WriteSamples(processedAudio, 0, processedAudio.Length);
+            return output;
         }
     }
 }
