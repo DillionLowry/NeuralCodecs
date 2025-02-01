@@ -358,7 +358,14 @@ public class TorchModelLoader : IModelLoader
         where TConfig : class, IModelConfig
     {
         if (!File.Exists(path))
+        {
+            if (path.Contains(".cache"))
+            {
+                _cache.ClearCache();
+                throw new CacheException($"Model file not found at {path}. Clearing Cache.");
+            }
             throw new LoadException($"Model file not found at {path}");
+        }
 
         try
         {
@@ -368,7 +375,7 @@ public class TorchModelLoader : IModelLoader
 
             return model;
         }
-        catch (Exception ex) when (ex is not LoadException)
+        catch (Exception ex) when (ex is not (LoadException or CacheException))
         {
             OnError?.Invoke(this, new LoadErrorEventArgs(path, ex));
             throw new LoadException($"Failed to load local model: {path}. {ex.Message}", ex);

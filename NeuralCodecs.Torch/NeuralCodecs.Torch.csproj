@@ -10,7 +10,7 @@
 	  <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 	  <Title>NeuralCodecs</Title>
 	  <PackageId>NeuralCodecs</PackageId>
-	  <Version>0.1.4</Version>
+	  <Version>0.1.5</Version>
 	  <Authors>Dillion Lowry</Authors>
 	  <Company></Company>
 	  <Description>Neural audio codec implementations using TorchSharp for .NET, supporting SNAC.</Description>
