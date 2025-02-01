@@ -6,10 +6,9 @@ using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Loading.Cache;
 using NeuralCodecs.Core.Loading.Repository;
 using NeuralCodecs.Core.Validation;
+using NeuralCodecs.Torch.Config.SNAC;
+using NeuralCodecs.Torch.Models;
 using System.Text.Json;
-using TorchSharp;
-using static TorchSharp.torch;
-using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
 namespace NeuralCodecs.Torch;
 
@@ -25,6 +24,13 @@ public class TorchModelLoader : IModelLoader
     private readonly ModelRegistry _registry;
     private readonly IModelRepository _repository;
     private readonly Dictionary<Type, object> _validators = new();
+
+    private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        Converters = { new ModelConfigJsonConverter<IModelConfig>() }
+    };
 
     #endregion Fields
 
@@ -117,7 +123,7 @@ public class TorchModelLoader : IModelLoader
     /// <returns>True if the source is a local path; otherwise, false.</returns>
     public bool IsLocalPath(string source)
     {
-        // Check if it's a Hugging Face repo pattern (user/model or org/model)
+        // Hugging Face model
         if (source.Count(c => c == '/') == 1 &&
             !source.Contains(':') &&  // No drive letter
             !source.StartsWith('/') && // Not absolute path
@@ -126,11 +132,15 @@ public class TorchModelLoader : IModelLoader
             return false;
         }
 
-        // Check for local path indicators
-        return source.Contains(Path.DirectorySeparatorChar) ||
-               source.Contains(Path.AltDirectorySeparatorChar) ||
-               source.Contains(":") || // Drive letter
-               File.Exists(source);
+        // Check if the source is a valid URI
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uriResult) &&
+            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        // Check if the path is rooted (indicating a local path)
+        return Path.IsPathRooted(source) || File.Exists(source);
     }
 
     /// <summary>
@@ -154,14 +164,15 @@ public class TorchModelLoader : IModelLoader
             Device = config?.Device,
             ValidateModel = config is null
         };
+        config ??= await LoadAndValidateConfig<TConfig>(GetConfigPath(path));
 
         if (IsLocalPath(path))
         {
-            return await LoadLocalModel<TModel, TConfig>(path, options);
+            return await LoadLocalModel<TModel, TConfig>(path, config, options);
         }
         else
         {
-            return await LoadRemoteModel<TModel, TConfig>(path, options);
+            return await LoadRemoteModel<TModel, TConfig>(path, config, options);
         }
     }
 
@@ -193,7 +204,9 @@ public class TorchModelLoader : IModelLoader
 
             if (_validators.TryGetValue(config.GetType(), out var validatorObj))
             {
-                var validator = validatorObj as IModelValidator<TConfig>;
+                var validator = validatorObj as IModelValidator<IModelConfig>
+                    ?? throw new ConfigurationException("Invalid model validator");
+
                 var validationResult = await validator.ValidateModel(model, config);
 
                 if (!validationResult.IsValid)
@@ -223,27 +236,12 @@ public class TorchModelLoader : IModelLoader
         _validators[typeof(TConfig)] = validator;
     }
 
-    private static torch.Device ConvertDevice(DeviceConfiguration device)
-    {
-        if (device == null)
-            return torch.CPU;
-
-        return device.Type switch
-        {
-            DeviceType.CPU => torch.CPU,
-            DeviceType.CUDA => cuda.is_available() ?
-                torch.CUDA :
-                throw new InvalidOperationException("CUDA device requested but not available"),
-            _ => throw new ArgumentException($"Unsupported device type: {device.Type}")
-        };
-    }
-
     private static ModelRegistry CreateDefaultRegistry()
     {
         var registry = new ModelRegistry();
 
         registry.RegisterModel<SNAC, SNACConfig>((config) =>
-            new SNAC(config, ConvertDevice(config.Device)));
+            new SNAC(config));
 
         return registry;
     }
@@ -256,6 +254,10 @@ public class TorchModelLoader : IModelLoader
             configPath = Path.Combine(
                 Path.GetDirectoryName(modelPath) ?? "",
                 "config.json");
+        }
+        if (!File.Exists(configPath))
+        {
+            throw new FileNotFoundException($"Config file not found at {configPath}");
         }
         return configPath;
     }
@@ -278,13 +280,12 @@ public class TorchModelLoader : IModelLoader
         };
     }
 
-    private async Task<ModelMetadata?> GetRemoteModelInfo(string source)
+    private async Task<ModelMetadata?> GetRemoteModelInfo(string source, string revision = "main")
     {
         try
         {
-            // Get repository metadata from Hugging Face
             var modelInfo = await _repository.GetModelInfo(source);
-            var cachedPath = await _cache.GetCachedPath(source, "main");
+            var cachedPath = await _cache.GetCachedPath(source, revision);
 
             return new ModelMetadata
             {
@@ -304,20 +305,23 @@ public class TorchModelLoader : IModelLoader
         }
     }
 
-    private async Task<TConfig> LoadAndValidateConfig<TConfig>(string path, ModelLoadOptions options) where TConfig : IModelConfig
+    private async Task<TConfig> LoadAndValidateConfig<TConfig>(string path)
+        where TConfig : IModelConfig
     {
-        var configPath = GetConfigPath(path);
-        if (!File.Exists(configPath) && options.RequireConfig)
+       
+        if (!File.Exists(path))
         {
-            throw new LoadException($"Config file not found at {configPath}");
+            throw new LoadException($"Config file not found at {path}");
         }
 
-        var config = await LoadConfig<TConfig>(configPath);
+        var config = await LoadConfig<TConfig>(path);
 
         if (_validators.TryGetValue(config.GetType(), out var validatorObj))
         {
-            var validator = validatorObj as IModelValidator<IModelConfig>;
-            var configResult = validator.ValidateConfig(config); // todo: null check
+            var validator = validatorObj as IModelValidator<IModelConfig>
+                ?? throw new ConfigurationException("Invalid model validator");
+
+            var configResult = validator.ValidateConfig(config);
 
             if (!configResult.IsValid)
             {
@@ -328,13 +332,6 @@ public class TorchModelLoader : IModelLoader
 
         return config;
     }
-
-    private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        Converters = { new ModelConfigJsonConverter<IModelConfig>() }
-    };
 
     private async Task<TConfig> LoadConfig<TConfig>(string path) where TConfig : IModelConfig
     {
@@ -356,7 +353,7 @@ public class TorchModelLoader : IModelLoader
     }
 
     private async Task<TModel> LoadLocalModel<TModel, TConfig>(
-                            string path, ModelLoadOptions options)
+        string path, TConfig config, ModelLoadOptions options)
         where TModel : class, INeuralCodec
         where TConfig : class, IModelConfig
     {
@@ -365,7 +362,6 @@ public class TorchModelLoader : IModelLoader
 
         try
         {
-            var config = await LoadAndValidateConfig<TConfig>(path, options);
             var model = _registry.CreateModel<TModel, TConfig>(config);
 
             await LoadWeights(model, path, options.ValidateModel);
@@ -375,12 +371,12 @@ public class TorchModelLoader : IModelLoader
         catch (Exception ex) when (ex is not LoadException)
         {
             OnError?.Invoke(this, new LoadErrorEventArgs(path, ex));
-            throw new LoadException($"Failed to load model from {path}", ex);
+            throw new LoadException($"Failed to load local model: {path}. {ex.Message}", ex);
         }
     }
 
     private async Task<TModel> LoadRemoteModel<TModel, TConfig>(
-        string source, ModelLoadOptions options)
+        string source, TConfig config, ModelLoadOptions options)
         where TModel : class, INeuralCodec
         where TConfig : class, IModelConfig
     {
@@ -403,7 +399,7 @@ public class TorchModelLoader : IModelLoader
                     var progress = new Progress<double>(p =>
                         OnProgress?.Invoke(this, new LoadProgressEventArgs(source, p)));
 
-                    await _repository.DownloadModel(source, tempDir, progress);
+                    await _repository.DownloadModel(source, tempDir, progress, options);
 
                     modelPath = await _cache.CacheModel(
                         source,
@@ -426,13 +422,13 @@ public class TorchModelLoader : IModelLoader
                 }
             }
 
-            return await LoadLocalModel<TModel, TConfig>(modelPath, options);
+            return await LoadLocalModel<TModel, TConfig>(modelPath, config, options);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not LoadException)
         {
-            _cache.ClearCache(source); // Clean up failed download
             OnError?.Invoke(this, new LoadErrorEventArgs(source, ex));
-            throw new LoadException($"Failed to load remote model: {source}", ex);
+            _cache.ClearCache(source); // Clean up failed download
+            throw new LoadException($"Failed to load remote model: {source}. {ex.Message}", ex);
         }
     }
 
@@ -453,8 +449,7 @@ public class TorchModelLoader : IModelLoader
 
             if (!validationResult.IsValid)
             {
-                throw new LoadException(
-                    $"Model validation failed: {string.Join(", ", validationResult.Errors)}");
+                throw new LoadException($"Model validation failed: {string.Join(", ", validationResult.Errors)}");
             }
         }
     }

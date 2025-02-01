@@ -10,7 +10,7 @@
 	  <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 	  <Title>NeuralCodecs</Title>
 	  <PackageId>NeuralCodecs</PackageId>
-	  <Version>0.1.1</Version>
+	  <Version>0.1.4</Version>
 	  <Authors>Dillion Lowry</Authors>
 	  <Company></Company>
 	  <Description>Neural audio codec implementations using TorchSharp for .NET, supporting SNAC.</Description>
@@ -43,7 +43,8 @@
     <ProjectReference Include="..\NeuralCodecs.Core\NeuralCodecs.Core.csproj" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="TorchSharp" Version="0.103.1" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="TorchSharp" Version="0.105.0" />
     <PackageReference Include="TorchSharp.PyBridge" Version="1.4.3" />
   </ItemGroup>
 	<PropertyGroup>

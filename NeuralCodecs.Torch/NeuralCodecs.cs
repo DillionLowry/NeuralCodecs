@@ -1,4 +1,6 @@
 ﻿using NeuralCodecs.Core.Loading;
+using NeuralCodecs.Torch.Config.SNAC;
+using NeuralCodecs.Torch.Models;
 
 namespace NeuralCodecs.Torch
 {

@@ -1,7 +1,7 @@
 using NeuralCodecs.Core.Configuration;
 using System.Text.Json.Serialization;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Config.SNAC;
 
 /// <summary>
 /// Configuration class for the SNAC (Specialized Neural Audio Codec) model.
@@ -26,7 +26,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the version of the model configuration.
     /// </summary>
     [JsonIgnore]
-    public string Version { get; set; } = "1.0";
+    public string Version { get; set; } = "1.2.1";
 
     /// <summary>
     /// Gets or sets additional metadata associated with the model configuration.
@@ -50,7 +50,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the stride rates for each layer in the encoder.
     /// </summary>
     [JsonPropertyName("encoder_rates")]
-    public int[] EncoderRates { get; set; } = [3, 3, 7, 7];
+    public int[] EncoderRates { get; set; } = [2, 3, 8, 8];
 
     /// <summary>
     /// Gets or sets the dimensionality of the latent space. Null indicates automatic sizing.
@@ -68,7 +68,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the stride rates for each layer in the decoder.
     /// </summary>
     [JsonPropertyName("decoder_rates")]
-    public int[] DecoderRates { get; set; } = [7, 7, 3, 3];
+    public int[] DecoderRates { get; set; } = [8, 8, 3, 2];
 
     /// <summary>
     /// Gets or sets the attention window size. Null disables attention.
