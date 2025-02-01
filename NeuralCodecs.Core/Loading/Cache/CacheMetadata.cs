@@ -23,7 +23,10 @@ namespace NeuralCodecs.Core.Loading.Cache
         /// <summary>
         /// Gets or sets the maximum number of days to keep the cached model.
         /// </summary>
-        public int MaxAgeInDays { get; set; }
+        public int MaxAgeInDays { get; set; } = 180;
+
+        public string ModelFileName { get; set; } = "";
+        public string ConfigFileName { get; set; } = "";
 
         /// <summary>
         /// Gets or sets the list of files included in the cache.
