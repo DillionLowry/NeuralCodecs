@@ -43,6 +43,7 @@
     <ProjectReference Include="..\NeuralCodecs.Core\NeuralCodecs.Core.csproj" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="TorchSharp" Version="0.103.1" />
     <PackageReference Include="TorchSharp.PyBridge" Version="1.4.3" />
   </ItemGroup>

@@ -1,5 +1,9 @@
 ﻿using NeuralCodecs.Core;
 using NeuralCodecs.Core.Configuration;
+using NeuralCodecs.Core.Loading;
+using NeuralCodecs.Core.Utils;
+using NeuralCodecs.Torch.Config.SNAC;
+using NeuralCodecs.Torch.Modules.SNAC;
 using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.PyBridge;
@@ -7,7 +11,7 @@ using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
-namespace NeuralCodecs.Torch;
+namespace NeuralCodecs.Torch.Models;
 
 /// <summary>
 /// Implements a neural audio codec that combines encoding, quantization, and decoding
@@ -16,7 +20,7 @@ namespace NeuralCodecs.Torch;
 public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, INeuralCodec
 {
     private readonly int _hopLength;
-
+    private torch.Device _device => TorchUtils.GetDevice(_config.Device);
     private readonly Encoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
     private readonly Decoder decoder;
@@ -28,8 +32,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
     /// Initializes a new instance of the SNAC neural audio codec.
     /// </summary>
     /// <param name="config">Configuration parameters for the codec</param>
-    /// <param name="device">The device (CPU/GPU) to run the model on</param>
-    public SNAC(SNACConfig config, torch.Device device) : base("SNAC")
+    public SNAC(SNACConfig config) : base("SNAC")
     {
         _config = config;
         _config.LatentDim = config.LatentDim ?? config.EncoderDim * (1 << config.EncoderRates.Length);
@@ -57,10 +60,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         RegisterComponents();
 
-        if (device != null)
-        {
-            this.to(device);
-        }
+        this.to(_device);
     }
 
     /// <summary>
@@ -135,7 +135,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         // Convert input audio data to tensor
         var inputTensor = torch.tensor(audioData, dtype: torch.float32)
                               .reshape(1, 1, -1)
-                              .to(this.GetDevice());
+                              .to(_device);
 
         // Preprocess and encode
         inputTensor = Preprocess(inputTensor);
@@ -181,7 +181,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         using var scope = torch.NewDisposeScope();
 
         // Convert code arrays to tensors with int64 dtype for indices
-        var codeTensors = codes.ConvertAll(code => torch.tensor(code, dtype: torch.int64).reshape(1, -1).to(this.GetDevice()));
+        var codeTensors = codes.ConvertAll(code => torch.tensor(code, dtype: torch.int64).reshape(1, -1).to(_device));
 
         var zQ = quantizer.FromCodes(codeTensors);
         var audio = decoder.forward(zQ);
@@ -203,12 +203,33 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         try
         {
-            // TODO: torchsharp load
-            this.load_py(path);
+            switch (FileUtil.DetectFileType(path))
+            {
+                case ModelFileType.PyTorch:
+                case ModelFileType.Weights:
+                    this.load_py(path);
+                    break;
+                case ModelFileType.SafeTensors:
+                    this.load_safetensors(path);
+                    break;
+                case ModelFileType.Checkpoint:
+                    this.load_checkpoint(path);
+                    break;
+                default:
+                    this.load(path);
+                    break;
+            }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (FileNotFoundException))
         {
-            throw new InvalidOperationException($"Failed to load PyTorch weights from {path}", ex);
+            // TODO
+            // Write state_dict to console
+            foreach (var (key, value) in this.state_dict())
+            {
+                Console.WriteLine($"{key}: {value}");
+            }
+
+            throw new InvalidOperationException($"Failed to load PyTorch weights from {path} {ex.Message}", ex);
         }
     }
 
@@ -235,7 +256,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         // Convert to tensor with correct shape
         var inputTensor = torch.tensor(audioData, dtype: float32)
                               .reshape(1, 1, -1)
-                              .to(this.GetDevice());
+                              .to(_device);
 
         // Process through model
         using (torch.inference_mode())
@@ -248,16 +269,16 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         }
     }
 
-    private torch.Device GetDevice()
-    {
-        return _config.Device?.Type switch
-        {
-            DeviceType.CPU => torch.CPU,
-            DeviceType.CUDA when cuda.is_available() => torch.CUDA,
-            DeviceType.CUDA => throw new InvalidOperationException("CUDA requested but not available"),
-            _ => torch.CPU
-        };
-    }
+    //private torch.Device GetDevice()
+    //{
+    //    return _config.Device?.Type switch
+    //    {
+    //        DeviceType.CPU => torch.CPU,
+    //        DeviceType.CUDA when cuda.is_available() => torch.CUDA,
+    //        DeviceType.CUDA => throw new InvalidOperationException("CUDA requested but not available"),
+    //        _ => torch.CPU
+    //    };
+    //}
 
     private static float[] ResampleAudio(float[] input, int sourceSampleRate, int targetSampleRate)
     {
