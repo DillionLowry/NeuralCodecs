@@ -1,5 +1,7 @@
 ﻿using NAudio.Wave;
+using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.Config.SNAC;
+using Spectre.Console;
 
 namespace NeuralCodecs.Torch.Examples
 {
@@ -7,45 +9,102 @@ namespace NeuralCodecs.Torch.Examples
     {
         private static async Task Main(string[] args)
         {
-            string modelPath, inputAudioPath, outputAudioPath;
-            if (args.Length < 3)
+            string outputAudioPath = "output.wav";
+            while (true)
             {
-                modelPath = "hubertsiuzdak/snac_24khz"; // Download from huggingface
-                inputAudioPath = "en_sample.wav";
-                outputAudioPath = "output.wav";
+                AnsiConsole.Clear();
+                AnsiConsole.Write(new FigletText("Neural Codecs").Centered().Color(Spectre.Console.Color.Blue));
+
+                var codec = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Choose your [green]codec[/]:")
+                        .PageSize(5)
+                        .AddChoices("SNAC", "Exit"));
+
+                if (codec == "Exit")
+                    break;
+
+                var sampleRate = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title($"Select sample rate for [green]{codec}[/]:")
+                        .PageSize(3)
+                        .AddChoices("24khz", "32khz", "44.1khz"));
+
+                var filePath = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Enter the path to your [green]WAV file[/]:")
+                        .ValidationErrorMessage("[red]Please enter a valid file path[/]")
+                        .Validate(path =>
+                        {
+                            if (string.IsNullOrEmpty(path))
+                                return ValidationResult.Error("[red]Path cannot be empty[/]");
+                            if (!File.Exists(path))
+                                return ValidationResult.Error("[red]File does not exist[/]");
+                            if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+                                return ValidationResult.Error("[red]File must be a WAV file[/]");
+                            return ValidationResult.Success();
+                        }));
+
+                (string modelPath, IModelConfig config) = (codec, sampleRate) switch
+                {
+                    ("SNAC", "24khz") => ("hubertsiuzdak/snac_24khz", SNACConfig.SNAC24Khz),
+                    ("SNAC", "32khz") => ("hubertsiuzdak/snac_32khz", SNACConfig.SNAC32Khz),
+                    ("SNAC", "44.1khz") => ("hubertsiuzdak/snac_44khz", SNACConfig.SNAC44Khz),
+
+                    _ => throw new InvalidDataException("Selection was invalid")
+                };
+
+                AnsiConsole.MarkupLine($"Encoding [blue]{Path.GetFileName(filePath)}[/] with [green]{codec}[/] at [green]{sampleRate}[/]");
+
+                try
+                {
+                    await AnsiConsole.Status()
+                        .StartAsync("Encoding...", async ctx =>
+                        {
+                            await SNACEncodeDecode(modelPath, filePath, outputAudioPath, (SNACConfig)config, ctx);
+                        });
+                    AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error during encoding: {ex.Message}[/]");
+                }
+                AnsiConsole.WriteLine();
+
+                if (!AnsiConsole.Confirm("Would you like to encode another file?"))
+                    break;
+            }
+
+            AnsiConsole.MarkupLine("[blue]Exiting...[/]");
+        }
+
+        public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config, StatusContext? ctx = null)
+        {
+            Report("Creating Model...", ctx);
+            var model = await NeuralCodecs.CreateSNACAsync(modelPath, config);
+
+            Report("Loading audio...", ctx);
+            var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
+
+            Report("Encoding audio...", ctx);
+            var codes = model.Encode(buffer);
+
+            Report("Decoding codes...", ctx);
+            var processedAudio = model.Decode(codes);
+
+            Report("Saving Audio...", ctx);
+            SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
+        }
+
+        private static void Report(string output, StatusContext? ctx = null)
+        {
+            if (ctx is null)
+            {
+                Console.WriteLine(output);
             }
             else
             {
-                modelPath = args[0];
-                inputAudioPath = args[1];
-                outputAudioPath = args[2];
+                ctx.Status(output);
             }
-
-            try
-            {
-                var config = SNACConfig.SNAC24Khz;
-                await SNACEncodeDecode(modelPath, inputAudioPath, outputAudioPath, config);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error: {ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-            }
-        }
-
-        public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config)
-        {
-            var model = await NeuralCodecs.CreateSNACAsync(modelPath, config);
-            var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
-
-            Console.WriteLine("Encoding audio...");
-            var codes = model.Encode(buffer);
-
-            Console.WriteLine("Decoding codes...");
-            var processedAudio = model.Decode(codes);
-
-            Console.WriteLine("Saving output...");
-            SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
         }
 
         public static float[] LoadAudio(string path, int targetSampleRate)

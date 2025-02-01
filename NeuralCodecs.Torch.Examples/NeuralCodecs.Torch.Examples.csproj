@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
 	<PackageReference Include="TorchSharp-cuda-windows" Version="0.103.1" />
   </ItemGroup>
 
