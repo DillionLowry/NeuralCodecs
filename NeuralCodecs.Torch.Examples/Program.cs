@@ -1,7 +1,12 @@
 ﻿using NAudio.Wave;
 using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.Config.SNAC;
+using NeuralCodecs.Torch.Utils;
+using SkiaSharp;
 using Spectre.Console;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Examples
 {
@@ -61,14 +66,36 @@ namespace NeuralCodecs.Torch.Examples
                         .StartAsync("Encoding...", async ctx =>
                         {
                             await SNACEncodeDecode(modelPath, filePath, outputAudioPath, (SNACConfig)config, ctx);
+
+
+
                         });
                     AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
+
                 }
                 catch (Exception ex)
                 {
                     AnsiConsole.MarkupLine($"[red]Error during encoding: {ex.Message}[/]");
                 }
                 AnsiConsole.WriteLine();
+                if (AnsiConsole.Confirm("Would you like to visualize the audio?"))
+                {
+                    AnsiConsole.WriteLine();
+
+
+                    AnsiConsole.WriteLine("Opening image...");
+                    var t = new Table();
+                    t.AddColumn("Spectrogram Comparison");
+                    t.AddRow("Top:    Original Audio");
+                    t.AddRow("Middle: Encoded Audio");
+                    t.AddRow("Bottom: Difference");
+                    AnsiConsole.Write(t);
+
+                    AudioVisualizer.CompareAudioSpectrograms(filePath, outputAudioPath, config.SamplingRate, "spectrogram_comparison.png");
+                    AnsiConsole.WriteLine();
+
+                    OpenImage("spectrogram_comparison.png");
+                }
 
                 if (!AnsiConsole.Confirm("Would you like to encode another file?"))
                     break;
@@ -76,7 +103,6 @@ namespace NeuralCodecs.Torch.Examples
 
             AnsiConsole.MarkupLine("[blue]Exiting...[/]");
         }
-
         public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config, StatusContext? ctx = null)
         {
             Report("Creating Model...", ctx);
@@ -93,6 +119,8 @@ namespace NeuralCodecs.Torch.Examples
 
             Report("Saving Audio...", ctx);
             SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
+
+
         }
 
         private static void Report(string output, StatusContext? ctx = null)
@@ -177,6 +205,39 @@ namespace NeuralCodecs.Torch.Examples
             }
 
             return output;
+        }
+        public static void OpenImage(string imagePath)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo();
+                psi.UseShellExecute = true;
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    psi.FileName = imagePath;
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    psi.FileName = "xdg-open";
+                    psi.Arguments = imagePath;
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    psi.FileName = "open";
+                    psi.Arguments = imagePath;
+                }
+                else
+                {
+                    throw new PlatformNotSupportedException("Current OS platform is not supported.");
+                }
+
+                Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to open image: {ex.Message}");
+            }
         }
     }
 }
