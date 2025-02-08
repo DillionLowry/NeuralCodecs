@@ -77,9 +77,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         long rightPad = (long)(Math.Ceiling((double)length / padTo) * padTo) - length;
 
-        audioData = nn.functional.pad(audioData, (0, rightPad));
-
-        return audioData;
+        return nn.functional.pad(audioData, (0, rightPad));
     }
 
     /// <summary>
@@ -268,17 +266,6 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
                              .ToArray();
         }
     }
-
-    //private torch.Device GetDevice()
-    //{
-    //    return _config.Device?.Type switch
-    //    {
-    //        DeviceType.CPU => torch.CPU,
-    //        DeviceType.CUDA when cuda.is_available() => torch.CUDA,
-    //        DeviceType.CUDA => throw new InvalidOperationException("CUDA requested but not available"),
-    //        _ => torch.CPU
-    //    };
-    //}
 
     private static float[] ResampleAudio(float[] input, int sourceSampleRate, int targetSampleRate)
     {
