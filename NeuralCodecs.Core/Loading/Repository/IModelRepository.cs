@@ -18,7 +18,7 @@
         /// </summary>
         /// <param name="modelId">The identifier of the model.</param>
         /// <returns>The model's metadata.</returns>
-        Task<ModelMetadata> GetModelInfo(string modelId);
+        Task<ModelMetadata> GetModelInfo(string modelId, string revision);
 
         /// <summary>
         /// Downloads a model from the repository.

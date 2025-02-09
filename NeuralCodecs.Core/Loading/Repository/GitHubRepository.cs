@@ -1,5 +1,6 @@
 ﻿using NeuralCodecs.Core.Exceptions;
 using NeuralCodecs.Core.Utils;
+using System;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -105,15 +106,58 @@ namespace NeuralCodecs.Core.Loading.Repository
         /// <summary>
         /// Retrieves metadata information about a model from the repository.
         /// </summary>
-        /// <param name="repoId">The GitHub repository identifier (owner/repo).</param>
-        public async Task<ModelMetadata> GetModelInfo(string repoId)
+        /// <param name="repo">The GitHub repository identifier (owner/repo) or full url ("https://github.com/owner/repo/")</param>
+        /// <param name="revision">The repository tag, branch, or release. Defaults to "main".</param>
+        public async Task<ModelMetadata> GetModelInfo(string repo, string? revision = "main")
         {
             try
             {
+                var repoId = GetRepoIdFromUrl(repo);
                 await _rateLimiter.WaitForResource();
 
                 var repoInfo = await GetRepositoryInfo(repoId);
-                var files = await GetRepositoryContents(repoId, "main");
+
+                // First try to find the file in releases if revision is specified
+                if (!string.IsNullOrEmpty(revision) && revision != "main")
+                {
+                    var release = await GetRelease(repoId, revision);
+                    if (release != null)
+                    {
+                        var modelAsset = release.Assets.FirstOrDefault(a =>
+                            _allowedFilePatterns.Any(p => new WildcardPattern(p).IsMatch(a.Name)));
+
+                        if (modelAsset != null)
+                        {
+                            var configAsset = release.Assets.FirstOrDefault(a =>
+                            {
+                                var fileName = a.Name.ToLowerInvariant();
+                                var modelName = Path.GetFileNameWithoutExtension(modelAsset.Name).ToLowerInvariant();
+
+                                return fileName == "config.json" ||
+                                       fileName == $"{modelName}.json" ||
+                                       fileName == $"{modelName}_config.json" ||
+                                       fileName.EndsWith("_config.json") ||
+                                       (fileName.Contains("config") && fileName.EndsWith(".json"));
+                            });
+
+                            return new ModelMetadata
+                            {
+                                Source = repoId,
+                                LastModified = repoInfo.UpdatedAt,
+                                Author = repoInfo.Owner.Login,
+                                Tags = repoInfo.Topics ?? new List<string>(),
+                                Backend = "TorchSharp",
+                                Size = modelAsset.Size,
+                                FileName = modelAsset.Name,
+                                ConfigFileName = configAsset?.Name ?? "",
+                                Description = repoInfo.Description
+                            };
+                        }
+                    }
+                }
+
+                // Fallback to repository contents
+                var files = await GetRepositoryContents(repoId, revision ?? "main");
 
                 var modelFile = files.FirstOrDefault(f =>
                     _allowedFilePatterns.Any(p => new WildcardPattern(p).IsMatch(f.Path)));
@@ -145,28 +189,140 @@ namespace NeuralCodecs.Core.Loading.Repository
                     Size = modelFile.Size,
                     FileName = modelFile.Path,
                     ConfigFileName = configFile?.Path ?? "",
-                    //Description = repoInfo.Description
+                    Description = repoInfo.Description
                 };
             }
             catch (Exception ex)
             {
-                throw new LoadException($"Failed to get model info for {repoId}", ex);
+                throw new LoadException($"Failed to get model info for {repo}", ex);
             }
+        }
+        /// <summary>
+        /// Creates a repository ID (owner/repo) from a full GitHub URL.
+        /// </summary>
+        /// <param name="url">The full GitHub URL (e.g., "https://github.com/owner/repo")</param>
+        /// <returns>The repository ID in "owner/repo" format</returns>
+        public static string GetRepoIdFromUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                throw new ArgumentException("URL cannot be empty", nameof(url));
+
+            // Remove trailing slashes and .git extension
+            url = url.TrimEnd('/', '.', 'g', 'i', 't');
+
+            // Try to parse the URL
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                // If not a valid URL, check if it's already in owner/repo format
+                if (url.Count(c => c == '/') == 1)
+                    return url;
+                throw new ArgumentException("Invalid GitHub URL or repository ID", nameof(url));
+            }
+
+            // Verify it's a GitHub URL
+            if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("URL must be a GitHub repository", nameof(url));
+
+            // Extract owner and repo from path segments
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 2)
+                throw new ArgumentException("Invalid GitHub repository URL", nameof(url));
+
+            return $"{segments[0]}/{segments[1]}";
+        }
+        /// <summary>
+        /// Downloads a model from a GitHub URL.
+        /// </summary>
+        /// <param name="url">The full GitHub URL (e.g., "https://github.com/owner/repo")</param>
+        /// <param name="targetPath">The local directory path where the model should be downloaded.</param>
+        /// <param name="progress">An IProgress object to report download progress.</param>
+        /// <param name="options">Model loading options including revision/tag.</param>
+        public Task DownloadModelFromUrl(string url, string targetPath, IProgress<double> progress, ModelLoadOptions options)
+        {
+            var repoId = GetRepoIdFromUrl(url);
+            return DownloadModel(repoId, targetPath, progress, options);
         }
 
         /// <summary>
+        /// Gets model information from a GitHub URL.
+        /// </summary>
+        /// <param name="url">The full GitHub URL (e.g., "https://github.com/owner/repo")</param>
+        public Task<ModelMetadata> GetModelInfoFromUrl(string url)
+        {
+            var repoId = GetRepoIdFromUrl(url);
+            return GetModelInfo(repoId);
+        }
+
+        /// <summary>
+        /// Gets the model path from a GitHub URL.
+        /// </summary>
+        /// <param name="url">The full GitHub URL (e.g., "https://github.com/owner/repo")</param>
+        /// <param name="revision">The repository tag, branch, or release.</param>
+        public Task<string> GetModelPathFromUrl(string url, string revision)
+        {
+            var repoId = GetRepoIdFromUrl(url);
+            return GetModelPath(repoId, revision);
+        }
+        /// <summary>
         /// Downloads a model and its associated files from the repository.
         /// </summary>
-        /// <param name="repoId">The GitHub repository identifier (owner/repo).</param>
+        /// <param name="repo">The GitHub repository identifier (owner/repo) or full url ("https://github.com/owner/repo/")</param>
         /// <param name="targetPath">The local directory path where the model should be downloaded.</param>
         /// <param name="progress">An IProgress object to report download progress.</param>
-        public async Task DownloadModel(string repoId, string targetPath, IProgress<double> progress, ModelLoadOptions options)
+        public async Task DownloadModel(string repo, string targetPath, IProgress<double> progress, ModelLoadOptions options)
         {
             try
             {
+                var repoId = GetRepoIdFromUrl(repo);
                 await _rateLimiter.WaitForResource();
 
-                var files = await GetRepositoryContents(repoId, "main");
+                // Check if a specific release is requested
+                if (!string.IsNullOrEmpty(options.Revision))
+                {
+                    var release = await GetRelease(repoId, options.Revision);
+                    if (release != null && release.Assets.Count != 0)
+                    {
+                        var releaseFiles = release.Assets.Where(a =>
+                            _allowedFilePatterns.Any(p => new WildcardPattern(p).IsMatch(a.Name))).ToList();
+
+                        var releaseSize = releaseFiles.Sum(f => f.Size);
+                        var downloaded = 0L;
+
+                        foreach (var asset in releaseFiles)
+                        {
+                            var destPath = Path.Combine(targetPath, asset.Name);
+                            var destDir = Path.GetDirectoryName(destPath);
+                            if (destDir != null) Directory.CreateDirectory(destDir);
+
+                            var releaseDownload = $"{RELEASE_BASE}/{repoId}/releases/download/{options.Revision}/{asset.Name}";
+                            await DownloadFileFromUrl(
+                                releaseDownload,
+                                destPath,
+                                new Progress<long>(bytesDownloaded =>
+                                {
+                                    downloaded += bytesDownloaded;
+                                    progress.Report((double)downloaded / releaseSize);
+                                }));
+                        }
+                        // Create corresponding GitHubContent objects for validation
+                        var contentFiles = releaseFiles.Select(a => new GitHubContent
+                        {
+                            Name = a.Name,
+                            Path = a.Name,
+                            Size = a.Size,
+                            Type = "file"
+                        }).ToList();
+
+                        await ValidateDownload(targetPath, contentFiles, options);
+                        return;
+                    }
+                }
+                else
+                {
+                    options.Revision = "main";
+                }
+
+                    var files = await GetRepositoryContents(repoId, options.Revision);
                 var filesToDownload = files.Where(f =>
                     _allowedFilePatterns.Any(p => new WildcardPattern(p).IsMatch(f.Path))).ToList();
 
@@ -184,7 +340,7 @@ namespace NeuralCodecs.Core.Loading.Repository
 
                     if (isLfsFile)
                     {
-                        await DownloadLfsFile(repoId, file, destPath, new Progress<long>(bytesDownloaded =>
+                        await DownloadLfsFile(repoId, file, options.Revision, destPath, new Progress<long>(bytesDownloaded =>
                         {
                             downloadedSize += bytesDownloaded;
                             progress.Report((double)downloadedSize / totalSize);
@@ -192,7 +348,7 @@ namespace NeuralCodecs.Core.Loading.Repository
                     }
                     else
                     {
-                        await DownloadFile(repoId, file, destPath, new Progress<long>(bytesDownloaded =>
+                        await DownloadFile(repoId, file, options.Revision, destPath, new Progress<long>(bytesDownloaded =>
                         {
                             downloadedSize += bytesDownloaded;
                             progress.Report((double)downloadedSize / totalSize);
@@ -214,7 +370,7 @@ namespace NeuralCodecs.Core.Loading.Repository
                 }
                 catch { /* Ignore cleanup errors */ }
 
-                throw new LoadException($"Failed to download model {repoId}", ex);
+                throw new LoadException($"Failed to download model {repo}", ex);
             }
         }
 
@@ -305,11 +461,13 @@ namespace NeuralCodecs.Core.Loading.Repository
             string repoId,
             GitHubContent file,
             string destPath,
+            string revision,
+
             IProgress<long> progress,
             CancellationToken cancellationToken = default)
         {
             // Get LFS pointer
-            var response = await _client.GetAsync($"{RAW_BASE}/{repoId}/main/{file.Path}");
+            var response = await _client.GetAsync($"{RAW_BASE}/{repoId}/{revision}/{file.Path}");
             var pointer = await response.Content.ReadAsStringAsync();
 
             // Parse the OID from the pointer
@@ -344,16 +502,16 @@ namespace NeuralCodecs.Core.Loading.Repository
             string repoId,
             GitHubContent file,
             string destPath,
+            string revision,
             IProgress<long> progress,
             CancellationToken cancellationToken = default)
         {
             await DownloadFileFromUrl(
-                $"{RAW_BASE}/{repoId}/main/{file.Path}",
+                $"{RAW_BASE}/{repoId}/{revision}/{file.Path}",
                 destPath,
                 progress,
                 cancellationToken);
         }
-
         private async Task DownloadFileFromUrl(
             string url,
             string destPath,
@@ -361,7 +519,7 @@ namespace NeuralCodecs.Core.Loading.Repository
             CancellationToken cancellationToken = default)
         {
             var tempPath = destPath + ".tmp";
-
+            const int BUFFER_SIZE = 1024 * 1024; // 1MB buffer
             try
             {
                 await _rateLimiter.WaitForResource();
@@ -378,10 +536,10 @@ namespace NeuralCodecs.Core.Loading.Repository
                     FileMode.Create,
                     FileAccess.Write,
                     FileShare.None,
-                    bufferSize: 81920,
+                    bufferSize: BUFFER_SIZE,
                     useAsync: true);
 
-                await contentStream.CopyToAsync(fileStream, progress, cancellationToken);
+                await contentStream.CopyToAsync(fileStream, BUFFER_SIZE, progress, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
