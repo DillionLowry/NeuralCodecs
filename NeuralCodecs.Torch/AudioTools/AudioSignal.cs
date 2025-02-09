@@ -1193,6 +1193,8 @@ public class AudioSignal : IDisposable
     /// </summary>
     public void ToMono()
     {
+        if (NumChannels == 1)
+            return;
         _audioData = _audioData.mean([1], keepdim: true);
     }
 
