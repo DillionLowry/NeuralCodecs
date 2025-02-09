@@ -59,12 +59,12 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
         device ??= torch.CPU;
 
         weight_v = Parameter(
-            empty([outChannels, inChannels / groups, kernelSize],
+            empty([inChannels, outChannels / groups, kernelSize],
                   dtype: float32,
                   device: device));
 
         weight_g = Parameter(
-            ones([outChannels, 1, 1],
+            ones([1, outChannels / groups, 1],
                  dtype: float32,
                  device: device));
 
@@ -141,22 +141,28 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// </returns>
     public override Tensor forward(Tensor input)
     {
-        using var scope = NewDisposeScope();
+        try
+        {
+            var vNorm = weight_v.contiguous().pow(2)
+                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
+                .sqrt();
+            var nWeight = mul(weight_v.div(vNorm), weight_g.sub(1e-7f)).contiguous();
 
-        // Compute norm per output channel
-        var v_norm = weight_v.contiguous().pow(2)
-                           .sum([1, 2], keepdim: true, ScalarType.Float32)
-                           .sqrt();
-
-        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
-
-        return functional.conv_transpose1d(
-                input, weight, bias,
+            return functional.conv_transpose1d(
+                input,
+                nWeight,
+                bias,
                 stride: _stride,
                 padding: _padding,
                 output_padding: _outputPadding,
-                dilation: _dilation,
-                groups: _groups).MoveToOuterDisposeScope();
+                groups: _groups,
+                dilation: _dilation);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     /// <inheritdoc/>
