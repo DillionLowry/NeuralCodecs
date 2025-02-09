@@ -23,16 +23,29 @@ internal static class Extensions
         IProgress<long>? progress = null,
         CancellationToken ct = default)
     {
-        var buffer = new byte[bufferSize];
-        int bytesRead;
-        long totalRead = 0;
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (bufferSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(bufferSize));
 
-        while ((bytesRead = await source.ReadAsync(buffer, ct)) != 0)
+        var buffer = new byte[bufferSize];
+        long totalBytesRead = 0;
+
+        while (true)
         {
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-            totalRead += bytesRead;
-            progress?.Report(bytesRead);
+            int bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false);
+            if (bytesRead == 0) break; // End of stream
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+
+            totalBytesRead += bytesRead;
+            progress?.Report(totalBytesRead);
+
+            if (ct.IsCancellationRequested) break;
         }
+
+        // Ensure writes are flushed
+        await destination.FlushAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -43,19 +56,13 @@ internal static class Extensions
     /// <param name="progress">Progress reporter for bytes read.</param>
     /// <param name="ct">Cancellation token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous copy operation.</returns>
-    public static async Task CopyToAsync(
+    public static Task CopyToAsync(
         this Stream source,
         Stream destination,
         IProgress<long>? progress = null,
         CancellationToken ct = default)
     {
-        var buffer = new byte[81920];
-        int bytesRead;
-        while ((bytesRead = await source.ReadAsync(buffer, ct)) != 0)
-        {
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-            progress?.Report(bytesRead);
-        }
+        return CopyToAsync(source, destination, 81920, progress, ct);
     }
 
     /// <summary>
