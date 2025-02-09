@@ -6,13 +6,11 @@ using NeuralCodecs.Torch.Modules.DAC;
 using TorchSharp;
 using TorchSharp.Modules;
 using TorchSharp.PyBridge;
-
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Utils;
 
-//using static TqdmSharp.Tqdm;
 
 namespace NeuralCodecs.Torch.Models;
 
@@ -40,11 +38,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
 
     private DACConfig _config;
     public IModelConfig Config => _config;
-
-    //public int SampleRate { get; }
-    //public int HopLength { get; }
-    //public Device Device => device;
-    //public Module<Tensor, Tensor> Quantizer => quantizer;
 
     /// <summary>
     /// Initializes a new instance of the DAC model.
@@ -84,15 +77,15 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         _sampleRate = sampleRate;
 
         // Calculate latent dimension if not provided
-        _latentDim = latentDim ?? encoderDim * (1 << encoderRates.Length);
+        _latentDim = latentDim ?? encoderDim * (1 << _encoderRates.Length);
 
         // Calculate total stride (hop length)as product of encoder rates
-        _hopLength = encoderRates.Aggregate((a, b) => a * b);
+        _hopLength = _encoderRates.Aggregate((a, b) => a * b);
 
         // Create encoder
         encoder = new Encoder(
-            dModel: encoderDim,
-            strides: encoderRates,
+            dModel: _encoderDim,
+            strides: _encoderRates,
             dLatent: _latentDim);
 
         _nCodebooks = nCodebooks;
@@ -110,14 +103,11 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         // Create decoder
         decoder = new Decoder(
             inputChannel: _latentDim,
-            channels: decoderDim,
-            rates: decoderRates);
+            channels: _decoderDim,
+            rates: _decoderRates);
 
         RegisterComponents();
         InitializeWeights();
-
-        // todo: This would come from CodecMixin
-        // delay = GetDelay();
     }
 
     /// <summary>
@@ -167,11 +157,11 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     /// <exception cref="ArgumentException">Thrown when the sample rate doesn't match the model's expected rate.</exception>
     private Tensor Preprocess(Tensor audioData, int? sampleRate = null)
     {
+        // TODO: Implement sample rate check
         sampleRate ??= _sampleRate;
 
         var length = audioData.size(-1);
-        var rightPad = (int)Math.Ceiling(length / (double)_hopLength) * _hopLength - length;
-
+        var rightPad = (long)(Math.Ceiling((double)length / _hopLength) * _hopLength) - length;
         return functional.pad(audioData, [0L, rightPad]);
     }
 
@@ -186,6 +176,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     {
         using var scope = NewDisposeScope();
 
+        audioData = Preprocess(audioData);
         var z = encoder.forward(audioData);
         var (zQ, codes, latents, commitmentLoss, codebookLoss) =
             quantizer.forward(z, nQuantizers);
@@ -258,15 +249,8 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         int? nQuantizers)
     {
         using var scope = NewDisposeScope();
-
-        var length = audioData.shape[^1];
-        audioData = Preprocess(audioData, sampleRate);
-
         var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData, nQuantizers);
-
         var audio = Decode(z);
-        // Trim to original length
-        audio = audio.narrow(-1, 0, length);
 
         return new Dictionary<string, Tensor> //TODO NAME
         {
@@ -287,16 +271,8 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     public override Dictionary<string, Tensor> forward(Tensor audioData)
     {
         using var scope = NewDisposeScope();
-
-        var length = audioData.shape[^1];
-
-        var preprocessed = Preprocess(audioData);
-
-        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(preprocessed);
+        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData);
         var audio = Decode(z);
-
-        // Trim to original length
-        audio = audio.narrow(-1, 0, length);
 
         return new Dictionary<string, Tensor>
         {
@@ -324,148 +300,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         base.Dispose(disposing);
     }
 
-    // TODO
-
-    //public static void TestModel()
-    //{
-    //    // Initialize model
-    //    var model = new DAC().to(CPU);
-
-    //    // Print model parameters
-    //    foreach (var (name, module) in model.named_modules())
-    //    {
-    //        var extraRepr = module.extra_repr();
-    //        var paramCount = module.parameters()
-    //            .Sum(p => p.size().Aggregate((a, b) => a * b));
-    //        module.extra_repr = () => $"{extraRepr} {paramCount / 1e6:F3}M params.";
-    //    }
-    //    Console.WriteLine(model);
-    //    Console.WriteLine("Total # of params: ",
-    //        model.parameters().Sum(p => p.size().Aggregate((a, b) => a * b)));
-
-    //    // Create input tensor
-    //    var length = 88200 * 2;
-    //    var x = randn(1, 1, length).to(model.device);
-    //    x.requires_grad_(true);
-    //    x.retain_grad();
-
-    //    // Forward pass
-    //    var output = model.forward(x)["audio"];
-    //    Console.WriteLine($"Input shape: [{string.Join(", ", x.size())}]");
-    //    Console.WriteLine($"Output shape: [{string.Join(", ", output.size())}]");
-
-    //    // Create gradient and backward pass
-    //    var grad = zeros_like(output);
-    //    grad[TensorIndex.Ellipsis, grad.size(-1) / 2] = 1;
-    //    output.backward((IList<Tensor>?)grad);
-
-    //    // Calculate receptive field
-    //    var gradmap = x.with_requires_grad().squeeze(0);
-    //    gradmap = (gradmap != 0).sum(0);
-    //    var rf = (gradmap != 0).sum();
-    //    Console.WriteLine($"Receptive field: {rf.item<long>()}");
-
-    //    // Test compression
-    //    var audioSignal = new AudioSignal(randn(1, 1, 44100 * 60), 44100);
-    //    var compressed = model.compress(audioSignal, verbose: true);
-    //    model.decompress(compressed, verbose: true);
-    //}
-
-    //public static async Task DecodeAsync(DecoderOptions options)
-    //{
-    //    // Validate model bitrate
-    //    if (!new[] { "8kbps", "16kbps" }.Contains(options.ModelBitrate))
-    //        throw new ArgumentException("Model bitrate must be 8kbps or 16kbps");
-
-    //    // Validate model type
-    //    if (!new[] { "44khz", "24khz", "16khz" }.Contains(options.ModelType))
-    //        throw new ArgumentException("Model type must be 44khz, 24khz, or 16khz");
-
-    //    // Determine device
-    //    var device = options.Device.ToLower() switch
-    //    {
-    //        "cuda" when torch.cuda.is_available() => CUDA,
-    //        "cpu" => CPU,
-    //        _ => CPU
-    //    };
-
-    //    // Load model
-    //    using var generator = LoadModel(
-    //        modelType: options.ModelType,
-    //        modelBitrate: options.ModelBitrate,
-    //        modelTag: options.ModelTag,
-    //        weightsPath: options.WeightsPath);
-
-    //    generator.to(device);
-    //    generator.eval();
-
-    //    // Find input files
-    //    var inputPath = new DirectoryInfo(options.Input);
-    //    var inputFiles = inputPath.Exists && !inputPath.Extension.Equals(".dac", StringComparison.OrdinalIgnoreCase)
-    //        ? inputPath.GetFiles("*.dac", SearchOption.AllDirectories).ToList()
-    //        : new List<FileInfo> { inputPath };
-
-    //    // Create output directory
-    //    var outputPath = new DirectoryInfo(options.Output);
-    //    outputPath.Create();
-
-    //    // Process files
-    //    Console.WriteLine($"Decoding {inputFiles.Count} files...");
-    //    var progress = new ProgressBar();
-
-    //    for (int i = 0; i < inputFiles.Count; i++)
-    //    {
-    //        progress.Report((double)i / inputFiles.Count);
-
-    //        if (options.Verbose)
-    //            Console.WriteLine($"Processing {inputFiles[i].Name}");
-
-    //        // Load DAC file
-    //        using var artifact = await DACFile.LoadAsync(inputFiles[i].FullName);
-
-    //        // Decode audio
-    //        using var inference = torch.inference_mode();
-    //        using var noGrad = torch.no_grad();
-    //        using var recons = generator.Decompress(artifact, options.Verbose);
-
-    //        // Compute output path
-    //        var relativePath = GetRelativePath(inputFiles[i].FullName, inputPath.FullName);
-    //        var outputDir = Path.Combine(outputPath.FullName, Path.GetDirectoryName(relativePath));
-    //        Directory.CreateDirectory(outputDir);
-
-    //        var outputFile = Path.Combine(
-    //            outputDir,
-    //            Path.GetFileNameWithoutExtension(inputFiles[i].Name) + ".wav");
-
-    //        // Save audio
-    //        await recons.WriteAsync(outputFile);
-    //    }
-
-    //    progress.Report(1.0);
-    //    Console.WriteLine("Done!");
-    //}
-
-    //private static DACGenerator LoadModel(
-    //    string modelType,
-    //    string modelBitrate,
-    //    string modelTag,
-    //    string weightsPath)
-    //{
-    //    if (!string.IsNullOrEmpty(weightsPath))
-    //    {
-    //        return DACGenerator.LoadFromFile(weightsPath);
-    //    }
-
-    //    var config = new DACConfig
-    //    {
-    //        ModelType = modelType,
-    //        ModelBitrate = modelBitrate,
-    //        Tag = modelTag
-    //    };
-
-    //    return DACGenerator.LoadPretrained(config);
-    //}
-
     private static string GetRelativePath(string fullPath, string basePath)
     {
         var fullUri = new Uri(fullPath);
@@ -477,41 +311,25 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
-            throw new FileNotFoundException($"PyTorch weights not found at {path}");
-        // TODO
-        // Write state_dict to console
-        foreach (var (key, value) in this.state_dict())
-        {
-            Console.WriteLine($"{key}: {value}");
-        }
+            throw new FileNotFoundException($"DAC weights not found at {path}");
+
         try
         {
             switch (FileUtil.DetectFileType(path))
             {
-                case ModelFileType.PyTorch:
-                    this.load_py(path);
-                    break;
-                case ModelFileType.SafeTensors:
-                    this.load_safetensors(path);
-                    break;
                 case ModelFileType.Checkpoint:
                     this.load_checkpoint(path);
                     break;
                 default:
-                    this.load(path);
+                    var (modelDict, config) = DACUnpickler.LoadWithConfig(path);
+                    this.load_state_dict(modelDict.StateDict);
+                    _config ??= config;
                     break;
             }
         }
         catch (Exception ex) when (ex is not (FileNotFoundException or InvalidOperationException))
         {
-            // TODO
-            // Write state_dict to console
-            foreach (var (key, value) in this.state_dict())
-            {
-                Console.WriteLine($"{key}: {value}");
-            }
-
-            throw new InvalidOperationException($"Failed to load PyTorch weights from {path} {ex.Message}", ex);
+            throw new InvalidOperationException($"Failed to load DAC weights from {path} {ex.Message}", ex);
         }
     }
 }
