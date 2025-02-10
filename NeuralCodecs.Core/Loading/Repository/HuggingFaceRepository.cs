@@ -76,16 +76,20 @@ namespace NeuralCodecs.Core.Loading.Repository
         /// Retrieves metadata information about a model from the repository.
         /// </summary>
         /// <param name="modelId">The Hugging Face model identifier.</param>
+        /// <param name="revision">The repository revision or branch name. Defaults to "main".</param>
         /// <returns>A ModelMetadata object containing information about the model.</returns>
         /// <exception cref="LoadException">Thrown when the model information cannot be retrieved.</exception>
-        public async Task<ModelMetadata> GetModelInfo(string modelId)
+        public async Task<ModelMetadata> GetModelInfo(string modelId, string? revision = "main")
         {
             try
             {
                 var metadata = await GetRepositoryMetadata(modelId);
+                // Get files for the specific revision
+                metadata.Files = await GetRepositoryFiles(modelId, revision ?? "main");
+
                 // Find model file
                 var modelFile = metadata.Files.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
-            
+
                 if (modelFile == null)
                 {
                     throw new LoadException($"No model file found in repository: {modelId}");
@@ -129,13 +133,14 @@ namespace NeuralCodecs.Core.Loading.Repository
         /// <param name="modelId">The Hugging Face model identifier.</param>
         /// <param name="targetPath">The local directory path where the model should be downloaded.</param>
         /// <param name="progress">An IProgress object to report download progress.</param>
+        /// <param name="options">Model loading options including revision/tag.</param>
         /// <exception cref="LoadException">Thrown when the download fails or validation errors occur.</exception>
         public async Task DownloadModel(string modelId, string targetPath, IProgress<double> progress, ModelLoadOptions options)
         {
-
             try
             {
-                var files = await GetRepositoryFiles(modelId, "main");
+                var revision = options.Revision ?? "main";
+                var files = await GetRepositoryFiles(modelId, revision);
                 var exts = ModelFileTypeExtensions.GetDefaultExtensions();
                 var filesToDownload = files.Where(f => exts.Any(ext => f.Path.EndsWith(ext))).ToList();
                 var totalSize = filesToDownload.Sum(f => f.Size);
@@ -146,13 +151,13 @@ namespace NeuralCodecs.Core.Loading.Repository
                     var destDir = Path.GetDirectoryName(destPath);
                     if (destDir != null) Directory.CreateDirectory(destDir);
 
-                    await DownloadFile(modelId, file, destPath, new Progress<long>(bytesDownloaded =>
+                    await DownloadFile(modelId, file, destPath, revision, new Progress<long>(bytesDownloaded =>
                     {
                         downloadedSize += bytesDownloaded;
                         progress.Report((double)downloadedSize / totalSize);
                     }));
                 }
-                
+
                 await ValidateDownload(targetPath, filesToDownload, options);
             }
             catch (Exception ex)
@@ -205,8 +210,8 @@ namespace NeuralCodecs.Core.Loading.Repository
                 {
                     throw new LoadException("Failed to get repository metadata");
                 }
-                metadata.Files = await GetRepositoryFiles(modelId, "main");
-                return metadata; 
+                // Note: Files will be set by the calling method with the specific revision
+                return metadata;
             }
             catch (Exception ex) when (ex is not LoadException)
             {
@@ -218,6 +223,7 @@ namespace NeuralCodecs.Core.Loading.Repository
             string modelId,
             RepositoryFile file,
             string destPath,
+            string revision,
             IProgress<long> progress,
             CancellationToken cancellationToken = default)
         {
@@ -225,7 +231,7 @@ namespace NeuralCodecs.Core.Loading.Repository
 
             try
             {
-                var url = $"{modelId}/resolve/main/{file.Path}";
+                var url = $"{modelId}/resolve/{revision}/{file.Path}";
                 using var response = await _client.GetAsync(
                     url,
                     HttpCompletionOption.ResponseHeadersRead,
@@ -271,7 +277,6 @@ namespace NeuralCodecs.Core.Loading.Repository
                 throw new LoadException($"Failed to move downloaded file {file.Path}", ex);
             }
         }
-
         private async Task ValidateDownload(string targetDir, List<RepositoryFile> expectedFiles, ModelLoadOptions options)
         {
             // Verify all required files exist

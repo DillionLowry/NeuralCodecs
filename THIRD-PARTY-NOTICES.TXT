@@ -25,6 +25,18 @@ Licensed under MIT
 
 Available at https://licenses.nuget.org/MIT
 
+License notice for audiotools
+------------------------------------
+
+https://github.com/descriptinc/audiotools
+
+https://www.descript.com/
+
+Copyright (c) 2023-present, Descript
+
+Licensed under MIT
+
+Available at https://licenses.nuget.org/MIT
 
 License notice for TorchSharp
 ------------------------------------

@@ -10,29 +10,30 @@ namespace NeuralCodecs.Core.Loading
         /// <summary>
         /// Target device for the model. Defaults to CPU.
         /// </summary>
-        public DeviceConfiguration? Device { get; init; }
+        public DeviceConfiguration? Device { get; set; }
 
         /// <summary>
         /// Model revision/tag to load. Defaults to "main".
         /// </summary>
-        public string Revision { get; init; } = "main";
+        public string Revision { get; set; } = "main";
 
         /// <summary>
         /// Whether to validate model state after loading. Default true.
         /// </summary>
-        public bool ValidateModel { get; init; } = true;
+        public bool ValidateModel { get; set; } = true;
 
         /// <summary>
         /// Whether to force redownload even if cached. Default false.
         /// </summary>
-        public bool ForceReload { get; init; } = false;
+        public bool ForceReload { get; set; } = false;
 
         /// <summary>
         /// Optional authentication token for private models
         /// </summary>
-        public string? AuthToken { get; init; }
+        public string? AuthToken { get; set; }
 
-        public bool HasConfigFile { get; init; }
-        public bool RequireConfig { get; init; }
+        // TODO
+        public bool HasConfigFile { get; set; }
+        public bool RequireConfig { get; set; }
     }
 }

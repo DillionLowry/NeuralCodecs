@@ -1,4 +1,5 @@
 ﻿using NeuralCodecs.Core.Exceptions;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace NeuralCodecs.Core.Loading.Cache
@@ -85,6 +86,20 @@ namespace NeuralCodecs.Core.Loading.Cache
             //await _cacheLock.WaitAsync();
             try
             {
+
+                var dir = new DirectoryInfo(sourcePath);
+                if (!dir.Exists)
+                {
+                    throw new DirectoryNotFoundException($"Source directory does not exist: {sourcePath}");
+                }
+
+                // Check if we have read access to the directory (only on Windows)
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    var acl = dir.GetAccessControl();
+                    var rules = acl.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier));
+                }
+
                 // Verify source file exists and is accessible
                 if (!File.Exists(Path.Combine(sourcePath, targetFileName)))
                 {
@@ -96,21 +111,26 @@ namespace NeuralCodecs.Core.Loading.Cache
                     Directory.CreateDirectory(targetDir);
                 }
 
-                // Copy files with explicit close
                 await using (var source = File.OpenRead(Path.Combine(sourcePath, targetFileName)))
                 await using (var target = File.OpenWrite(targetPath))
                 {
                     await source.CopyToAsync(target);
                 }
-                await using (var source = File.OpenRead(Path.Combine(sourcePath, targetConfigFileName)))
-                await using (var targetConfig = File.OpenWrite(targetConfigPath))
+
+                if (!string.IsNullOrWhiteSpace(targetConfigFileName))
                 {
+                    await using var source = File.OpenRead(Path.Combine(sourcePath, targetConfigFileName));
+                    await using var targetConfig = File.OpenWrite(targetConfigPath);
                     await source.CopyToAsync(targetConfig);
                 }
 
                 await CreateCacheMetadata(targetDir, modelId, revision, targetFileName, targetConfigFileName);
 
                 return targetPath;
+            }
+            catch (UnauthorizedAccessException uae)
+            {
+                throw new CacheException($"Permission denied accessing source directory: {sourcePath}. Please check directory permissions.", uae);
             }
             catch (Exception ex)
             {

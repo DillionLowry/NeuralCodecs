@@ -1,4 +1,5 @@
 ﻿using NeuralCodecs.Core.Loading;
+using NeuralCodecs.Torch.Config.DAC;
 using NeuralCodecs.Torch.Config.SNAC;
 using NeuralCodecs.Torch.Models;
 
@@ -28,6 +29,15 @@ namespace NeuralCodecs.Torch
         {
             var loader = new TorchModelLoader();
             var model = await loader.LoadModelAsync<SNAC, SNACConfig>(path, config, options);
+            model.eval();
+            return model;
+        }
+
+        public static async Task<DAC> CreateDACAsync(string path, DACConfig? config = null, ModelLoadOptions? options = null)
+        {
+            var loader = new TorchModelLoader();
+            options ??= new ModelLoadOptions() { HasConfigFile = false, ValidateModel = false };
+            var model = await loader.LoadModelAsync<DAC, DACConfig>(path, config, options);
             model.eval();
             return model;
         }
