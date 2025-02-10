@@ -113,7 +113,7 @@ namespace NeuralCodecs.Torch.Examples
                             }
                             else
                             {
-                                await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config);
+                                await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config, ctx:ctx);
                             }
                         });
                     AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
@@ -168,87 +168,48 @@ namespace NeuralCodecs.Torch.Examples
 
 
         }
-        public static async Task DACEncodeDecode(string modelPath, string inputPath, string outputPath, DACConfig config, bool useAudioSignal = true)
+        public static async Task DACEncodeDecode(string modelPath, string inputPath, string outputPath, DACConfig config, bool useAudioSignal = true, StatusContext? ctx = null)
         {
-            Console.WriteLine($"Loading model from {modelPath}...");
-            var model = await NeuralCodecs.CreateDACAsync(modelPath, config, null);
-            model.to(CUDA);
+            Report("Creating Model...", ctx);
 
+            if (cuda.is_available())
+            {
+                config.Device = DeviceConfiguration.CUDA();
+            }
+
+            var model = await NeuralCodecs.CreateDACAsync(modelPath, config, null);
+
+            Report("Loading audio...", ctx);
             Tensor audioTensor;
             if (useAudioSignal)
             {
-                var audio = new AudioSignal(inputPath, device: "cuda");
+                var audio = new AudioSignal(inputPath, device: config.Device.Type.ToString());
                 audio.Resample(config.SamplingRate);
                 audio.ToMono();
 
                 audioTensor = audio.AudioData;
-                //var output = model.forward(audioTensor);
-                //SaveAudio(outputPath, output["audio"].cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
 
+                Report("Encoding audio...", ctx);
                 (var tAudio, var _, _, _, _) = model.Encode(audioTensor);
+
+                Report("Decoding audio...", ctx);
                 var decoded = model.Decode(tAudio);
+                Report("Saving Audio...", ctx);
                 SaveAudio(outputPath, decoded.cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
             }
             else
             {
-                // TODO: Encode from float array
                 var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
-                //audioTensor = torch.tensor(buffer, new long[] { buffer.Length });
-                //var qAudio = model.Compress(buffer);
-                //SaveAudio("compressed_audio.wav", qAudio, model.Config.SamplingRate);
-                //var processedAudio = model.Decompress(qAudio);
-                //SaveAudio("decompressed_audio.wav", processedAudio, model.Config.SamplingRate);
+
+                Report("Encoding audio...", ctx);
+                var encoded = model.Encode(buffer);
+
+                Report("Decoding audio...", ctx);
+                var decoded = model.Decode(encoded);
+
+                Report("Saving Audio...", ctx);
+                SaveAudio(outputPath, decoded, model.Config.SamplingRate);
             }
-
-            //(var tAudio, var cTensor, _, _, _) = model.Encode(audioTensor);
-
-            //tAudio = DAC.Compress(audioTensor);
-            ////diagnostics.GenerateComparisonScript("compare_tensors.py");
-
-            //tAudio.WriteTensorToFile($"signal_encoded.txt", count: 5000);
-            //cTensor.WriteTensorToFile($"signal_codes.txt", count: 5000);
-
-            //var decoded = model.Decode(tAudio);
-
-            //decoded.WriteTensorToFile($"signal_decoded.txt", count: 5000);
-
-            //SaveAudio(outputPath, decoded.cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
-
-            //--------------------------------------------------------------------------------
-            //var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
-            //var res = model.forward(audio.AudioData, 44100, null);
-
-            //var aTensor = torch.tensor(buffer, new long[] { 1, 1, buffer.Length });
-            //var codes = cTensor.cpu().detach().data<long>().ToArray();
-
-            //var res = model.forward(aTensor);
-            //var codes = res["codes"].cpu().detach().data<long>().ToArray();
-            //var processedAudio = res["audio"].cpu().detach().data<float>().ToArray();
-
-            //File.WriteAllText("codes_csharp.txt", string.Join(", ", codes));
-            //// save audio
-            //SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
-
-            //var processedAudio = model.Decompress(tAudio);
-
-            //Console.WriteLine("compressing audio...");
-            //var qAudio = model.Compress(buffer);
-            ////////SaveAudio("encoded.wav", qAudio, model.Config.SamplingRate);
-
-            //Console.WriteLine("Decompressing audio...");
-            //var processedAudio = model.Decompress(qAudio);
-
-            //Console.WriteLine("Encoding audio...");
-            //var codes = model.Encode(buffer);
-
-            // write codes to file comma separated
-            //File.WriteAllText("codes_csharp.txt", string.Join(", ", codes));
-
-            //Console.WriteLine("Decoding codes...");
-            //var processedAudio = model.Decode(codes);
-
-            Console.WriteLine("Saving output...");
-            //SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
         }
 
         private static void Report(string output, StatusContext? ctx = null)
@@ -334,6 +295,7 @@ namespace NeuralCodecs.Torch.Examples
 
             return output;
         }
+
         public static void OpenImage(string imagePath)
         {
             try
