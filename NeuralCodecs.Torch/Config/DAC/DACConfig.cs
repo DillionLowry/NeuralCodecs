@@ -102,11 +102,11 @@ public class DACConfig: IModelConfig
     public int ChunkSeconds { get; set; } = 10;  // Default 10 second chunks
 
     [JsonIgnore]
-    public static DACConfig DAC44khz => new();
+    public static DACConfig DAC44kHz => new();
 
     // TODO
     [JsonIgnore]
-    public static DACConfig DAC44khz16kbps => new()
+    public static DACConfig DAC44kHz_16kbps => new()
     {
         ModelBitrate = "16kbps",
         ModelType = "44khz",
@@ -116,7 +116,7 @@ public class DACConfig: IModelConfig
     };
 
     [JsonIgnore]
-    public static DACConfig DAC24khz => new()
+    public static DACConfig DAC24kHz => new()
     {
         SamplingRate = 24000,
         ModelType = "24khz",
@@ -127,7 +127,7 @@ public class DACConfig: IModelConfig
     };
 
     [JsonIgnore]
-    public static DACConfig DAC16khz => new()
+    public static DACConfig DAC16kHz => new()
     {
         SamplingRate = 16000,
         ModelType = "16khz",
