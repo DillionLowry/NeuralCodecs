@@ -1,11 +1,14 @@
 ﻿using NAudio.Wave;
 using NeuralCodecs.Core.Configuration;
+using NeuralCodecs.Torch.AudioTools;
+using NeuralCodecs.Torch.Config.DAC;
 using NeuralCodecs.Torch.Config.SNAC;
 using NeuralCodecs.Torch.Utils;
 using SkiaSharp;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using TorchSharp;
 using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Examples
@@ -24,7 +27,7 @@ namespace NeuralCodecs.Torch.Examples
                     new SelectionPrompt<string>()
                         .Title("Choose your [green]codec[/]:")
                         .PageSize(5)
-                        .AddChoices("SNAC", "Exit"));
+                        .AddChoices("SNAC", "DAC", "Exit"));
 
                 if (codec == "Exit")
                     break;
@@ -32,8 +35,54 @@ namespace NeuralCodecs.Torch.Examples
                 var sampleRate = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
                         .Title($"Select sample rate for [green]{codec}[/]:")
-                        .PageSize(3)
-                        .AddChoices("24khz", "32khz", "44.1khz"));
+                        .PageSize(5)
+                        .AddChoices(codec == "SNAC" 
+                            ? new[] { "24khz", "32khz", "44.1khz" }
+                            : new[] { "16khz", "24khz", "44.1khz", "44.1khz-16kbps" }));
+
+                var useCustomModel = AnsiConsole.Confirm("Would you like to use a custom model path?", defaultValue:false);
+
+                string modelPath;
+                if (useCustomModel)
+                {
+                    modelPath = AnsiConsole.Prompt(
+                        new TextPrompt<string>("Enter the path to your [green]model[/]:")
+                            .ValidationErrorMessage("[red]Please enter a valid model path[/]")
+                            .Validate(path =>
+                            {
+                                if (string.IsNullOrEmpty(path))
+                                    return ValidationResult.Error("[red]Path cannot be empty[/]");
+                                if (!Directory.Exists(path) && !File.Exists(path))
+                                    return ValidationResult.Error("[red]Model path does not exist[/]");
+                                return ValidationResult.Success();
+                            }));
+                }
+                else
+                {
+                    modelPath = (codec, sampleRate) switch
+                    {
+                        ("SNAC", "24khz") => "hubertsiuzdak/snac_24khz",
+                        ("SNAC", "32khz") => "hubertsiuzdak/snac_32khz",
+                        ("SNAC", "44.1khz") => "hubertsiuzdak/snac_44khz",
+                        ("DAC", "16khz") => "descript/dac_16khz",
+                        ("DAC", "24khz") => "descript/dac_24khz", 
+                        ("DAC", "44.1khz") => "descript/dac_44khz",
+                        ("DAC", "44.1khz-16kbps") => @"https://github.com/descriptinc/descript-audio-codec/",
+                        _ => throw new InvalidDataException("Selection was invalid")
+                    };
+                }
+
+                var config = (codec, sampleRate) switch
+                {
+                    ("SNAC", "24khz") => (IModelConfig)SNACConfig.SNAC24Khz,
+                    ("SNAC", "32khz") => (IModelConfig)SNACConfig.SNAC32Khz,
+                    ("SNAC", "44.1khz") => (IModelConfig)SNACConfig.SNAC44Khz,
+                    ("DAC", "16khz") => (IModelConfig)DACConfig.DAC16kHz,
+                    ("DAC", "24khz") => (IModelConfig)DACConfig.DAC24kHz,
+                    ("DAC", "44.1khz") => (IModelConfig)DACConfig.DAC44kHz,
+                    ("DAC", "44.1khz-16kbps") => (IModelConfig)DACConfig.DAC44kHz_16kbps,
+                    _ => throw new InvalidDataException("Selection was invalid")
+                };
 
                 var filePath = AnsiConsole.Prompt(
                     new TextPrompt<string>("Enter the path to your [green]WAV file[/]:")
@@ -41,7 +90,9 @@ namespace NeuralCodecs.Torch.Examples
                         .Validate(path =>
                         {
                             if (string.IsNullOrEmpty(path))
+                            {
                                 return ValidationResult.Error("[red]Path cannot be empty[/]");
+                            }
                             if (!File.Exists(path))
                                 return ValidationResult.Error("[red]File does not exist[/]");
                             if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
@@ -49,53 +100,48 @@ namespace NeuralCodecs.Torch.Examples
                             return ValidationResult.Success();
                         }));
 
-                (string modelPath, IModelConfig config) = (codec, sampleRate) switch
-                {
-                    ("SNAC", "24khz") => ("hubertsiuzdak/snac_24khz", SNACConfig.SNAC24Khz),
-                    ("SNAC", "32khz") => ("hubertsiuzdak/snac_32khz", SNACConfig.SNAC32Khz),
-                    ("SNAC", "44.1khz") => ("hubertsiuzdak/snac_44khz", SNACConfig.SNAC44Khz),
-
-                    _ => throw new InvalidDataException("Selection was invalid")
-                };
-
                 AnsiConsole.MarkupLine($"Encoding [blue]{Path.GetFileName(filePath)}[/] with [green]{codec}[/] at [green]{sampleRate}[/]");
 
                 try
                 {
                     await AnsiConsole.Status()
-                        .StartAsync("Encoding...", async ctx =>
+                        .StartAsync("Loading model...", async ctx =>
                         {
-                            await SNACEncodeDecode(modelPath, filePath, outputAudioPath, (SNACConfig)config, ctx);
-
-
-
+                            if (codec == "SNAC")
+                            {
+                                await SNACEncodeDecode(modelPath, filePath, outputAudioPath, (SNACConfig)config, ctx);
+                            }
+                            else
+                            {
+                                await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config);
+                            }
                         });
                     AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
+                    AnsiConsole.WriteLine();
+                    if (AnsiConsole.Confirm("Would you like to visualize the audio?"))
+                    {
+                        AnsiConsole.WriteLine();
 
+
+                        AnsiConsole.WriteLine("Opening image...");
+                        var t = new Table();
+                        t.AddColumn("Spectrogram Comparison");
+                        t.AddRow("Top:    Original Audio");
+                        t.AddRow("Middle: Encoded Audio");
+                        t.AddRow("Bottom: Difference");
+                        AnsiConsole.Write(t);
+
+                        AudioVisualizer.CompareAudioSpectrograms(filePath, outputAudioPath, config.SamplingRate, "spectrogram_comparison.png");
+                        AnsiConsole.WriteLine();
+
+                        OpenImage("spectrogram_comparison.png");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error during encoding: {ex.Message}[/]");
+                    AnsiConsole.MarkupLine($"[red]Error during encoding: {Markup.Escape(ex.Message)} {Markup.Escape(ex.InnerException?.Message ?? string.Empty)}[/]");
                 }
                 AnsiConsole.WriteLine();
-                if (AnsiConsole.Confirm("Would you like to visualize the audio?"))
-                {
-                    AnsiConsole.WriteLine();
-
-
-                    AnsiConsole.WriteLine("Opening image...");
-                    var t = new Table();
-                    t.AddColumn("Spectrogram Comparison");
-                    t.AddRow("Top:    Original Audio");
-                    t.AddRow("Middle: Encoded Audio");
-                    t.AddRow("Bottom: Difference");
-                    AnsiConsole.Write(t);
-
-                    AudioVisualizer.CompareAudioSpectrograms(filePath, outputAudioPath, config.SamplingRate, "spectrogram_comparison.png");
-                    AnsiConsole.WriteLine();
-
-                    OpenImage("spectrogram_comparison.png");
-                }
 
                 if (!AnsiConsole.Confirm("Would you like to encode another file?"))
                     break;
@@ -121,6 +167,88 @@ namespace NeuralCodecs.Torch.Examples
             SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
 
 
+        }
+        public static async Task DACEncodeDecode(string modelPath, string inputPath, string outputPath, DACConfig config, bool useAudioSignal = true)
+        {
+            Console.WriteLine($"Loading model from {modelPath}...");
+            var model = await NeuralCodecs.CreateDACAsync(modelPath, config, null);
+            model.to(CUDA);
+
+            Tensor audioTensor;
+            if (useAudioSignal)
+            {
+                var audio = new AudioSignal(inputPath, device: "cuda");
+                audio.Resample(config.SamplingRate);
+                audio.ToMono();
+
+                audioTensor = audio.AudioData;
+                //var output = model.forward(audioTensor);
+                //SaveAudio(outputPath, output["audio"].cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
+
+                (var tAudio, var _, _, _, _) = model.Encode(audioTensor);
+                var decoded = model.Decode(tAudio);
+                SaveAudio(outputPath, decoded.cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
+            }
+            else
+            {
+                // TODO: Encode from float array
+                var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
+                //audioTensor = torch.tensor(buffer, new long[] { buffer.Length });
+                //var qAudio = model.Compress(buffer);
+                //SaveAudio("compressed_audio.wav", qAudio, model.Config.SamplingRate);
+                //var processedAudio = model.Decompress(qAudio);
+                //SaveAudio("decompressed_audio.wav", processedAudio, model.Config.SamplingRate);
+            }
+
+            //(var tAudio, var cTensor, _, _, _) = model.Encode(audioTensor);
+
+            //tAudio = DAC.Compress(audioTensor);
+            ////diagnostics.GenerateComparisonScript("compare_tensors.py");
+
+            //tAudio.WriteTensorToFile($"signal_encoded.txt", count: 5000);
+            //cTensor.WriteTensorToFile($"signal_codes.txt", count: 5000);
+
+            //var decoded = model.Decode(tAudio);
+
+            //decoded.WriteTensorToFile($"signal_decoded.txt", count: 5000);
+
+            //SaveAudio(outputPath, decoded.cpu().detach().data<float>().ToArray(), model.Config.SamplingRate);
+
+            //--------------------------------------------------------------------------------
+            //var buffer = LoadAudio(inputPath, model.Config.SamplingRate);
+            //var res = model.forward(audio.AudioData, 44100, null);
+
+            //var aTensor = torch.tensor(buffer, new long[] { 1, 1, buffer.Length });
+            //var codes = cTensor.cpu().detach().data<long>().ToArray();
+
+            //var res = model.forward(aTensor);
+            //var codes = res["codes"].cpu().detach().data<long>().ToArray();
+            //var processedAudio = res["audio"].cpu().detach().data<float>().ToArray();
+
+            //File.WriteAllText("codes_csharp.txt", string.Join(", ", codes));
+            //// save audio
+            //SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
+
+            //var processedAudio = model.Decompress(tAudio);
+
+            //Console.WriteLine("compressing audio...");
+            //var qAudio = model.Compress(buffer);
+            ////////SaveAudio("encoded.wav", qAudio, model.Config.SamplingRate);
+
+            //Console.WriteLine("Decompressing audio...");
+            //var processedAudio = model.Decompress(qAudio);
+
+            //Console.WriteLine("Encoding audio...");
+            //var codes = model.Encode(buffer);
+
+            // write codes to file comma separated
+            //File.WriteAllText("codes_csharp.txt", string.Join(", ", codes));
+
+            //Console.WriteLine("Decoding codes...");
+            //var processedAudio = model.Decode(codes);
+
+            Console.WriteLine("Saving output...");
+            //SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
         }
 
         private static void Report(string output, StatusContext? ctx = null)

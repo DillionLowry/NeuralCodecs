@@ -6,6 +6,7 @@ using NeuralCodecs.Core.Loading;
 using NeuralCodecs.Core.Loading.Cache;
 using NeuralCodecs.Core.Loading.Repository;
 using NeuralCodecs.Core.Validation;
+using NeuralCodecs.Torch.Config.DAC;
 using NeuralCodecs.Torch.Config.SNAC;
 using NeuralCodecs.Torch.Models;
 using System.Text.Json;
@@ -22,7 +23,7 @@ public class TorchModelLoader : IModelLoader
 
     private readonly IModelCache _cache;
     private readonly ModelRegistry _registry;
-    private readonly IModelRepository _repository;
+    private IModelRepository _repository;
     private readonly Dictionary<Type, object> _validators = new();
 
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
@@ -240,9 +241,8 @@ public class TorchModelLoader : IModelLoader
     {
         var registry = new ModelRegistry();
 
-        registry.RegisterModel<SNAC, SNACConfig>((config) =>
-            new SNAC(config));
-
+        registry.RegisterModel<SNAC, SNACConfig>((config) => new SNAC(config));
+        registry.RegisterModel<DAC, DACConfig>((config) => new DAC(config));
         return registry;
     }
 
@@ -284,7 +284,7 @@ public class TorchModelLoader : IModelLoader
     {
         try
         {
-            var modelInfo = await _repository.GetModelInfo(source);
+            var modelInfo = await _repository.GetModelInfo(source, revision);
             var cachedPath = await _cache.GetCachedPath(source, revision);
 
             return new ModelMetadata
@@ -395,8 +395,14 @@ public class TorchModelLoader : IModelLoader
 
             if (modelPath == null)
             {
+                if (source.Contains("github", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    _repository = new GitHubRepository();
+                    options.Revision = config.Version;
+
+                }
                 // path of the model file in the repository
-                var modelMetadata = await _repository.GetModelInfo(source);
+                var modelMetadata = await _repository.GetModelInfo(source, options.Revision);
 
                 var tempDir = Path.Combine(Path.GetTempPath(), $"neural_codecs_{Guid.NewGuid()}");
                 Directory.CreateDirectory(tempDir);
@@ -409,7 +415,7 @@ public class TorchModelLoader : IModelLoader
                     await _repository.DownloadModel(source, tempDir, progress, options);
 
                     modelPath = await _cache.CacheModel(
-                        source,
+                        modelMetadata.Source,
                         tempDir,
                         options.Revision,
                         modelMetadata.FileName,
@@ -451,12 +457,13 @@ public class TorchModelLoader : IModelLoader
 
         if (validate && _validators.TryGetValue(model.Config.GetType(), out var validatorObj))
         {
-            var validator = validatorObj as IModelValidator<IModelConfig>;
-            var validationResult = await validator.ValidateModel(model, model.Config);
-
-            if (!validationResult.IsValid)
+            if (validatorObj is IModelValidator<IModelConfig> validator)
             {
-                throw new LoadException($"Model validation failed: {string.Join(", ", validationResult.Errors)}");
+                var validationResult = await validator.ValidateModel(model, model.Config);
+                if (!validationResult.IsValid)
+                {
+                    throw new LoadException($"Model validation failed: {string.Join(", ", validationResult.Errors)}");
+                }
             }
         }
     }
