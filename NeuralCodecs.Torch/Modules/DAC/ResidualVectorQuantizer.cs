@@ -52,85 +52,39 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
         RegisterComponents();
     }
 
-    public override (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
-        forward(Tensor z) => forward(z, null);
 
-    //public override (Tensor zQ, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
-    //            forward(Tensor z, int? nQuantizers = null)
-    //{
-    //    using var scope = NewDisposeScope();
+    public override (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss) forward(Tensor z)
+    {
+        using var scope = NewDisposeScope();
+        var residual = z.clone();
+        Tensor zQ = torch.zeros_like(z);
+        var codes = new List<Tensor>();
+        var latents = new List<Tensor>();
 
-    //    var zQ = zeros_like(z);
-    //    var residual = z.clone();
-    //    var commitmentLoss = zeros(1, device: z.device);
-    //    var codebookLoss = zeros(1, device: z.device);
+        for (int i = 0; i < quantizers.Count; i++)
+        {
+            var (zQI, _, _, codesI, latentsI) = quantizers[i].forward(residual);
+            zQ += zQI;
+            residual -= zQI;
+            codes.Add(codesI);
+            latents.Add(latentsI);
+        }
 
-    //    var codebookIndices = new List<Tensor>();
-    //    var latents = new List<Tensor>();
-
-    //    int numQuantizers = nQuantizers ?? _nCodebooks;
-
-    //    // Handle training-time dropout
-    //    Tensor dropout = null;
-    //    if (training)
-    //    {
-    //        var batchSize = z.size(0);
-    //        numQuantizers = _nCodebooks;
-
-    //        if (_quantizerDropout > 0)
-    //        {
-    //            var nQuantizersTensor = ones(batchSize).mul(_nCodebooks + 1);
-    //            dropout = randint(1, _nCodebooks + 1, batchSize);
-    //            var nDropout = (int)(batchSize * _quantizerDropout);
-
-    //            if (nDropout > 0)
-    //            {
-    //                nQuantizersTensor.narrow(0, 0, nDropout).copy_(dropout.narrow(0, 0, nDropout));
-    //            }
-
-    //            nQuantizersTensor = nQuantizersTensor.to(z.device);
-    //            dropout = nQuantizersTensor;
-    //        }
-    //    }
-
-    //    // Apply quantizers sequentially
-    //    for (int i = 0; i < numQuantizers; i++)
-    //    {
-    //        var quantizer = quantizers[i];
-    //        var (zQi, _, _, indices, latentsI) = quantizer.forward(residual);
-
-    //        // Create mask for dropout if training
-    //        Tensor mask = null;
-    //        if (dropout is not null)
-    //        {
-    //            mask = full(new long[] { z.size(0) }, i, device: z.device).lt(dropout);
-    //            zQ = zQ.add(zQi.mul(mask.reshape(-1, 1, 1)));
-    //        }
-    //        else
-    //        {
-    //            zQ = zQ.add(zQi);
-    //        }
-
-    //        residual = residual.sub(zQi);
-    //        codebookIndices.Add(indices.clone());
-    //        latents.Add(latentsI.clone());
-    //    }
-
-    //    var codes = stack(codebookIndices, dim: 1);
-    //    var combinedLatents = cat(latents, dim: 1);
-
-    //    return (
-    //        zQ.MoveToOuterDisposeScope(),
-    //        codes.MoveToOuterDisposeScope(),
-    //        combinedLatents.MoveToOuterDisposeScope(),
-    //        commitmentLoss.MoveToOuterDisposeScope(),
-    //        codebookLoss.MoveToOuterDisposeScope()
-    //    );
-    //}
-
+        return (
+            zQ.MoveToOuterDisposeScope(),
+            torch.stack(codes.ToArray(), 1).MoveToOuterDisposeScope(),
+            torch.cat(latents.ToArray(), 1).MoveToOuterDisposeScope(),
+            torch.tensor(0.0f).MoveToOuterDisposeScope(),  // Placeholder
+            torch.tensor(0.0f).MoveToOuterDisposeScope()   // Placeholder
+        );
+    }
     public (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
         forward(Tensor z, int? nQuantizers)
     {
+        if (nQuantizers is null)
+        {
+            return forward(z);
+        }
         using var scope = NewDisposeScope();
 
         var zQ = zeros_like(z, dtype: z.dtype, device: z.device);
@@ -143,11 +97,6 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
         // Handle number of quantizers and dropout during training
         var batchSize = z.size(0);
         Tensor nQuantizersPerBatch;
-
-        if (nQuantizers == null)
-        {
-            nQuantizersPerBatch = full(batchSize, _nCodebooks).to(z.device);
-        }
 
         if (training)
         {

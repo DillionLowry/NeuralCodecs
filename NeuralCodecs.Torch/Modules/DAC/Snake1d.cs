@@ -76,20 +76,18 @@ public class Snake1d : Module<Tensor, Tensor>
         using var scope = NewDisposeScope();
 
         var shape = x.shape;
-        var reshaped = x.reshape(shape[0], shape[1], -1);
+        var reshaped = x.view(shape[0], shape[1], -1);
 
         // Follow exact torch graph operation order
         var alpha_mul = alpha.mul(reshaped);
-        var sin_result = OptimizedSin(alpha_mul);
-        var powered = sin_result.pow(2);
+        var sin_result = OptimizedSin(alpha_mul).pow(2);
 
-        var alpha_eps = alpha.add(EPSILON);
-        var reciprocal = alpha_eps.reciprocal();
-        var mul_result = reciprocal.mul(powered);
+        var reciprocal = alpha.add(EPSILON).reciprocal();
+        var mul_result = reciprocal.mul(sin_result);
 
-        return reshaped.add(mul_result, alpha: 1.0f)
-                        .reshape(shape)
-                        .MoveToOuterDisposeScope();
+        var output = reshaped.add(mul_result, alpha: 1.0f)
+                        .view(shape);
+        return output.MoveToOuterDisposeScope();
     }
 
     /// <inheritdoc/>
