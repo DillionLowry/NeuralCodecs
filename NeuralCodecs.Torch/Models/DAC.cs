@@ -1,16 +1,15 @@
 using NeuralCodecs.Core;
 using NeuralCodecs.Core.Configuration;
+using NeuralCodecs.Core.Loading;
+using NeuralCodecs.Core.Utils;
 using NeuralCodecs.Torch.Config.DAC;
-using NeuralCodecs.Torch.Utils;
 using NeuralCodecs.Torch.Modules.DAC;
+using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using TorchSharp.Modules;
 using TorchSharp.PyBridge;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
-using NeuralCodecs.Core.Loading;
-using NeuralCodecs.Core.Utils;
-
 
 namespace NeuralCodecs.Torch.Models;
 
@@ -34,7 +33,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
 
     private readonly Encoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
-    private readonly Decoder decoder; // use null attention
+    private readonly Decoder decoder;
 
     private DACConfig _config;
     public IModelConfig Config => _config;
@@ -42,63 +41,45 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     /// <summary>
     /// Initializes a new instance of the DAC model.
     /// </summary>
-    /// <param name="encoderDim">Dimension of the encoder's hidden layers.</param>
-    /// <param name="encoderRates">Stride rates for each encoder layer.</param>
-    /// <param name="latentDim">Dimension of the latent space. If null, calculated from encoderDim.</param>
-    /// <param name="decoderDim">Dimension of the decoder's hidden layers.</param>
-    /// <param name="decoderRates">Stride rates for each decoder layer.</param>
-    /// <param name="nCodebooks">Number of codebooks in the vector quantizer.</param>
-    /// <param name="codebookSize">Size of each codebook.</param>
-    /// <param name="codebookDim">Dimension of each codebook entry.</param>
-    /// <param name="quantizerDropout">Dropout rate to use in the quantizer training.</param>
-    /// <param name="sampleRate">Audio sample rate the model operates on.</param>
+    /// <param name="config">Configuration parameters for the codec</param>
     /// <remarks>
-    /// In the original Python implementation, the quantizerDropout is a bool parameter which is passed to 
-    /// the quantizer as a float, effectively setting dropout to either 1.0 or 0, which the quantizer uses 
+    /// In the original Python implementation, the quantizerDropout is a bool parameter which is passed to
+    /// the quantizer as a float, effectively setting dropout to either 1.0 or 0, which the quantizer uses
     /// to determine what fraction of the batch will have randomized quantizer counts. This contradicts the
     /// original research paper, which shows the optimal value to be 0.5.
     /// </remarks>
-    public DAC(
-        int encoderDim = 64,
-        int[] encoderRates = null,
-        int? latentDim = null,
-        int decoderDim = 1536,
-        int[] decoderRates = null,
-        int nCodebooks = 9,
-        int codebookSize = 1024,
-        int codebookDim = 8,
-        float quantizerDropout = 0.0f,
-        int sampleRate = 44100) : base("DAC")
+    public DAC(DACConfig config) : base("DAC")
     {
-        _encoderDim = encoderDim;
-        _encoderRates = encoderRates ?? [2, 4, 8, 8];
-        _decoderDim = decoderDim;
-        _decoderRates = decoderRates ?? [8, 8, 4, 2];
-        _sampleRate = sampleRate;
+        ArgumentNullException.ThrowIfNull(config);
+        _config = config;
+
+        _encoderDim = config.EncoderDim;
+        _encoderRates = config.EncoderRates ?? [2, 4, 8, 8];
+        _decoderDim = config.DecoderDim;
+        _decoderRates = config.DecoderRates ?? [8, 8, 4, 2];
+        _sampleRate = config.SamplingRate;
 
         // Calculate latent dimension if not provided
-        _latentDim = latentDim ?? encoderDim * (1 << _encoderRates.Length);
+        _latentDim = config.LatentDim ?? _encoderDim * (1 << _encoderRates.Length);
 
-        // Calculate total stride (hop length)as product of encoder rates
+        // Calculate total stride (hop length) as product of encoder rates
         _hopLength = _encoderRates.Aggregate((a, b) => a * b);
 
-        // Create encoder
         encoder = new Encoder(
             dModel: _encoderDim,
             strides: _encoderRates,
             dLatent: _latentDim);
 
-        _nCodebooks = nCodebooks;
-        _codebookSize = codebookSize;
-        _codebookDim = codebookDim;
+        _nCodebooks = config.NumCodebooks;
+        _codebookSize = config.CodebookSize;
+        _codebookDim = config.CodebookDim;
 
-        // Create quantizer
         quantizer = new ResidualVectorQuantizer(
             inputDim: _latentDim,
             nCodebooks: _nCodebooks,
             codebookSize: _codebookSize,
             codebookDim: _codebookDim,
-            quantizerDropout: quantizerDropout);
+            quantizerDropout: config.QuantizerDropout);
 
         // Create decoder
         decoder = new Decoder(
@@ -107,6 +88,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             rates: _decoderRates);
 
         RegisterComponents();
+        this.to(_device);
         InitializeWeights();
     }
 
@@ -115,8 +97,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     /// </summary>
     private void InitializeWeights()
     {
-        // Implement weight initialization
-        // Similar to init_weights in Python
         foreach (var module in modules())
         {
             if (module is Conv1d conv)
@@ -133,20 +113,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             }
         }
     }
-    public DAC(DACConfig config) : this(
-        encoderDim: config.EncoderDim,
-        encoderRates: config.EncoderRates,
-        latentDim: config.LatentDim,
-        decoderDim: config.DecoderDim,
-        decoderRates: config.DecoderRates,
-        nCodebooks: config.NumCodebooks,
-        codebookSize: config.CodebookSize,
-        codebookDim: config.CodebookDim,
-        quantizerDropout: config.QuantizerDropout,
-        sampleRate: config.SamplingRate)
-    {
-        _config = config;
-    }
 
     /// <summary>
     /// Preprocesses the input audio data by padding it to match the model's hop length.
@@ -157,8 +123,13 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     /// <exception cref="ArgumentException">Thrown when the sample rate doesn't match the model's expected rate.</exception>
     private Tensor Preprocess(Tensor audioData, int? sampleRate = null)
     {
-        // TODO: Implement sample rate check
         sampleRate ??= _sampleRate;
+        if (sampleRate != _sampleRate)
+        {
+            throw new ArgumentException(
+                $"Input audio sample rate {sampleRate}Hz does not match model sample rate {_sampleRate}Hz",
+                nameof(sampleRate));
+        }
 
         var length = audioData.size(-1);
         var rightPad = (long)(Math.Ceiling((double)length / _hopLength) * _hopLength) - length;
@@ -170,13 +141,14 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     /// </summary>
     /// <param name="audioData">Input audio tensor.</param>
     /// <param name="nQuantizers">Number of quantizers to use (optional).</param>
+    /// <param name="sampleRate">Sample rate of the input audio (optional).</param>
     /// <returns>Tuple containing the quantized output, codes, latents, and losses.</returns>
     public (Tensor z, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
-        Encode(Tensor audioData, int? nQuantizers = null)
+        Encode(Tensor audioData, int? nQuantizers = null, int? sampleRate = null)
     {
         using var scope = NewDisposeScope();
 
-        audioData = Preprocess(audioData);
+        audioData = Preprocess(audioData, sampleRate);
         var z = encoder.forward(audioData);
         var (zQ, codes, latents, commitmentLoss, codebookLoss) =
             quantizer.forward(z, nQuantizers);
@@ -189,6 +161,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             codebookLoss.MoveToOuterDisposeScope()
         );
     }
+
     /// <summary>
     /// Encodes audio data into a list of quantized codes.
     /// </summary>
@@ -201,7 +174,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         using var scope = torch.NewDisposeScope();
 
         // Convert input audio data to tensor
-        var inputTensor = torch.tensor(audioData, dtype: torch.float32)
+        var inputTensor = torch.tensor(audioData, dtype: torch.float32, _device)
                               .reshape(1, 1, -1)
                               .to(_device);
 
@@ -213,6 +186,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         // Convert quantized to float array
         return quantized.cpu().detach().to(torch.float32).data<float>().ToArray();
     }
+
     /// <summary>
     /// Decodes the latent representation back to audio.
     /// </summary>
@@ -222,13 +196,19 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     {
         return decoder.forward(qAudio);
     }
+
+    /// <summary>
+    /// Decodes the latent representation back to audio.
+    /// </summary>
+    /// <param name="qAudio">Latent representation to decode.</param>
+    /// <returns>Reconstructed audio array.</returns>
     public float[] Decode(float[] qAudio)
     {
         ArgumentNullException.ThrowIfNull(qAudio);
         using var scope = torch.NewDisposeScope();
         // Convert input latent data to tensor
-        var inputTensor = torch.tensor(qAudio, dtype: torch.float32)
-                              .reshape(1, 1, -1)
+        var inputTensor = torch.tensor(qAudio, dtype: torch.float32, _device)
+                              .reshape(1, _latentDim, -1)
                               .to(_device);
         // Decode
         var audio = decoder.forward(inputTensor);
@@ -249,7 +229,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         int? nQuantizers)
     {
         using var scope = NewDisposeScope();
-        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData, nQuantizers);
+        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData, sampleRate, nQuantizers);
         var audio = Decode(z);
 
         return new Dictionary<string, Tensor> //TODO NAME
@@ -286,6 +266,25 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     }
 
     /// <summary>
+    /// Performs a forward pass through the model.
+    /// </summary>
+    /// <param name="audioData">Input audio tensor.</param>
+    /// <returns>Reconstructed audio tensor.</returns>
+    public float[] forward(float[] audioData)
+    {
+        ArgumentNullException.ThrowIfNull(audioData);
+        using var scope = torch.NewDisposeScope();
+        // Convert input audio data to tensor
+        var inputTensor = torch.tensor(audioData, dtype: torch.float32, _device)
+                              .reshape(1, 1, -1)
+                              .to(_device);
+        // Preprocess and forward
+        var outputs = forward(inputTensor);
+        // Convert audio to float array
+        return outputs["audio"].cpu().detach().to(torch.float32).data<float>().ToArray();
+    }
+
+    /// <summary>
     /// Disposes the model's resources.
     /// </summary>
     /// <param name="disposing">Whether to dispose managed resources.</param>
@@ -308,6 +307,12 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         return Uri.UnescapeDataString(relativeUri.ToString());
     }
 
+    /// <summary>
+    /// Loads the model weights from the specified file path.
+    /// </summary>
+    /// <param name="path">The file path to load the weights from.</param>
+    /// <exception cref="FileNotFoundException">Thrown when the specified file is not found.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when there is an error loading the weights.</exception>
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
@@ -320,6 +325,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
                 case ModelFileType.Checkpoint:
                     this.load_checkpoint(path);
                     break;
+
                 default:
                     var (modelDict, config) = DACUnpickler.LoadWithConfig(path);
                     this.load_state_dict(modelDict.StateDict);
