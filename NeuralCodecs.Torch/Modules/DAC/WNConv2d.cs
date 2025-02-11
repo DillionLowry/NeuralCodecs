@@ -111,6 +111,7 @@ public class WNConv2d : Module<Tensor, Tensor>
         }
     }
 
+    /// <inheritdoc/>
     public override Tensor forward(Tensor input)
     {
         using var scope = NewDisposeScope();

@@ -1,9 +1,9 @@
 using NeuralCodecs.Torch.AudioTools;
-using TorchSharp;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
 namespace NeuralCodecs.Torch.Modules.DAC;
+
 /// <summary>
 /// Base class for audio losses supporting both AudioSignal and raw tensors
 /// </summary>

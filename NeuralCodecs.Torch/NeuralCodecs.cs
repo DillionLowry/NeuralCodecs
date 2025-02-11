@@ -33,13 +33,24 @@ namespace NeuralCodecs.Torch
             return model;
         }
 
+        /// <summary>
+        /// Asynchronously creates an instance of DAC using the specified path, configuration, and options.
+        /// </summary>
+        /// <param name="path">The path to the model file.</param>
+        /// <param name="config">The configuration for the DAC model.</param>
+        /// <param name="options">The options for loading the model.</param>
+        /// <returns>A new instance of DAC.</returns>
         public static async Task<DAC> CreateDACAsync(string path, DACConfig? config = null, ModelLoadOptions? options = null)
         {
             var loader = new TorchModelLoader();
+
             options ??= new ModelLoadOptions() { HasConfigFile = false, ValidateModel = false };
+
             var model = await loader.LoadModelAsync<DAC, DACConfig>(path, config, options);
+
             model.eval();
+
             return model;
-        }
+        }
     }
 }

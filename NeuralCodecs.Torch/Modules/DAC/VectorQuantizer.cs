@@ -29,8 +29,17 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
 
     private bool _disposed;
 
+    /// <summary>
+    /// Gets the dimension of the codebook.
+    /// </summary>
     public int CodebookDim { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="VectorQuantizer"/> class.
+    /// </summary>
+    /// <param name="inputDim">The input dimension.</param>
+    /// <param name="codebookSize">The number of entries in the codebook.</param>
+    /// <param name="codebookDim">The dimension of the codebook.</param>
     public VectorQuantizer(int inputDim, int codebookSize, int codebookDim)
         : base($"VQ_{codebookSize}_{codebookDim}")
     {

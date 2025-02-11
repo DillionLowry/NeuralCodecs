@@ -110,13 +110,13 @@ public class SNACConfig() : IModelConfig
     /// Gets a predefined configuration for 44kHz audio processing.
     /// </summary>
     [JsonIgnore]
-    public static SNACConfig SNAC44Khz => new();
+    public static SNACConfig SNAC44kHz => new();
 
     /// <summary>
     /// Gets a predefined configuration for 32kHz audio processing.
     /// </summary>
     [JsonIgnore]
-    public static SNACConfig SNAC32Khz => new()
+    public static SNACConfig SNAC32kHz => new()
     {
         SamplingRate = 32000,
         EncoderDim = 64,
@@ -136,7 +136,7 @@ public class SNACConfig() : IModelConfig
     /// Gets a predefined configuration for 24kHz audio processing.
     /// </summary>
     [JsonIgnore]
-    public static SNACConfig SNAC24Khz => new()
+    public static SNACConfig SNAC24kHz => new()
     {
         SamplingRate = 24000,
         EncoderDim = 48,

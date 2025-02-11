@@ -4,7 +4,7 @@ using Spectre.Console;
 using TorchSharp;
 using static TorchSharp.torch;
 
-namespace NeuralCodecs.Torch.Utils;
+namespace NeuralCodecs.Torch.Examples;
 
 public class AudioVisualizer
 {
@@ -40,12 +40,6 @@ public class AudioVisualizer
         SaveSpectrogram(encodedSpec, encodedSavePath);
         SaveDifference(originalSpec, encodedSpec, diffSavePath);
     }
-    public static Canvas CompareAudioSpectrograms(string originalPath, string encodedPath, int sampleRate)
-    {
-        var (originalSpec, encodedSpec) = CreateSpectrograms(originalPath, encodedPath, sampleRate);
-
-        return CreateComparisonSpectrogram(originalSpec, encodedSpec);
-    }
 
     private static (Tensor originalSpec, Tensor encodedSpec) CreateSpectrograms(string originalPath, string encodedPath, int sampleRate)
     {
@@ -71,7 +65,7 @@ public class AudioVisualizer
     {
         var audio = LoadAudio(path, sampleRate);
 
-        return torch.tensor(audio, dtype: ScalarType.Float32)
+        return tensor(audio, dtype: ScalarType.Float32)
             .reshape(1, 1, -1); // [batch, channels, samples]
     }
 
@@ -131,7 +125,7 @@ public class AudioVisualizer
             else
             {
                 output[i] = (float)((1 - fraction) * input[index] +
-                           (fraction * input[index + 1]));
+                           fraction * input[index + 1]);
             }
         }
 
@@ -140,11 +134,11 @@ public class AudioVisualizer
 
     private static Tensor ComputeSTFT(Tensor audio, int nFft, int hopLength)
     {
-        var window = torch.hann_window(nFft);
+        var window = hann_window(nFft);
 
         // Pad signal
-        var padSize = (nFft / 2);
-        var paddedAudio = torch.nn.functional.pad(audio,
+        var padSize = nFft / 2;
+        var paddedAudio = nn.functional.pad(audio,
             new long[] { padSize, padSize }, PaddingModes.Reflect);
 
         // Prepare frames
@@ -155,7 +149,7 @@ public class AudioVisualizer
             frames.Add(frame);
         }
 
-        var stacked = torch.stack(frames.ToArray(), 1);
+        var stacked = stack(frames.ToArray(), 1);
 
         // Apply FFT
         var fft = torch.fft.rfft(stacked, nFft);
@@ -176,10 +170,10 @@ public class AudioVisualizer
 
         // Create and apply Mel filterbank
         var melBasis = CreateMelFilterbank(sampleRate, nFft, nMels, fMin, fMax);
-        var melSpec = torch.matmul(power, melBasis.transpose(0, 1));  // [frames, n_mels]
+        var melSpec = matmul(power, melBasis.transpose(0, 1));  // [frames, n_mels]
 
         // Convert to log scale
-        return torch.log10(melSpec + 1e-9f);
+        return log10(melSpec + 1e-9f);
     }
 
     private static Tensor CreateMelFilterbank(int sampleRate, int nFft, int nMels,
@@ -193,7 +187,7 @@ public class AudioVisualizer
             700.0f * ((float)Math.Pow(10, mel / 2595.0f) - 1.0f);
 
         // Create Mel points
-        var melPoints = torch.linspace(
+        var melPoints = linspace(
             HzToMel(fMin),
             HzToMel(fMax),
             nMels + 2
@@ -205,13 +199,13 @@ public class AudioVisualizer
         {
             hzPointsData[i] = MelToHz(melPoints[i].item<float>());
         }
-        var hzPoints = torch.tensor(hzPointsData);
+        var hzPoints = tensor(hzPointsData);
 
         // Convert to FFT bins
         var bins = (hzPoints * (nFft + 1) / sampleRate).round().to(ScalarType.Int64);
 
         // Create filterbank matrix
-        var fbank = torch.zeros(nMels, nFft / 2 + 1);
+        var fbank = zeros(nMels, nFft / 2 + 1);
 
         // Fill the filterbank matrix
         for (int i = 0; i < nMels; i++)
@@ -314,50 +308,6 @@ public class AudioVisualizer
         using var stream = File.OpenWrite(path);
         data.SaveTo(stream);
     }
-    private static Canvas CreateComparisonSpectrogram(Tensor originalSpec, Tensor encodedSpec)
-    {
-        var diffSpec = (originalSpec - encodedSpec).abs();
-
-        // Process each spectrogram to get consistent dimensions
-        var specs = new[] { originalSpec, encodedSpec, diffSpec };
-        var processedSpecs = specs.Select(spec =>
-        {
-            var data = spec.cpu().detach().squeeze().transpose(0, 1).to(ScalarType.Float32);
-            var min = data.min().item<float>();
-            var max = data.max().item<float>();
-            return ((data - min) / (max - min) * 255).to(ScalarType.Byte);
-        }).ToArray();
-
-        // Get dimensions
-        var width = (int)processedSpecs[0].size(1);  // time
-        var height = (int)processedSpecs[0].size(0);  // frequency
-        var totalHeight = height * 3;  // Stack three spectrograms
-
-        //using var bitmap = new SKBitmap(width, totalHeight);
-        var canvas = new Canvas(width, totalHeight);
-
-        // Process each spectrogram into its section of the image
-        for (int specIndex = 0; specIndex < 3; specIndex++)
-        {
-            var currentSpec = processedSpecs[specIndex];
-            var yOffset = specIndex * height;
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    var value = currentSpec[y, x].item<byte>();
-                    var color = ApplyColormap(value);
-                    // Calculate position in combined image, maintaining Y-flip for each section
-                    var combinedY = yOffset + (height - 1 - y);
-                    canvas.SetPixel(x, combinedY, new Color(color.R, color.G, color.B));
-                }
-            }
-        }
-
-        return canvas;
-    }
-
 
     private static void SaveDifference(Tensor spec1, Tensor spec2, string path)
     {

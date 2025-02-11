@@ -3,12 +3,9 @@ using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.AudioTools;
 using NeuralCodecs.Torch.Config.DAC;
 using NeuralCodecs.Torch.Config.SNAC;
-using NeuralCodecs.Torch.Utils;
-using SkiaSharp;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using TorchSharp;
 using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Examples
@@ -36,11 +33,11 @@ namespace NeuralCodecs.Torch.Examples
                     new SelectionPrompt<string>()
                         .Title($"Select sample rate for [green]{codec}[/]:")
                         .PageSize(5)
-                        .AddChoices(codec == "SNAC" 
+                        .AddChoices(codec == "SNAC"
                             ? new[] { "24khz", "32khz", "44.1khz" }
                             : new[] { "16khz", "24khz", "44.1khz", "44.1khz-16kbps" }));
 
-                var useCustomModel = AnsiConsole.Confirm("Would you like to use a custom model path?", defaultValue:false);
+                var useCustomModel = AnsiConsole.Confirm("Would you like to use a custom model path?", defaultValue: false);
 
                 string modelPath;
                 if (useCustomModel)
@@ -65,7 +62,7 @@ namespace NeuralCodecs.Torch.Examples
                         ("SNAC", "32khz") => "hubertsiuzdak/snac_32khz",
                         ("SNAC", "44.1khz") => "hubertsiuzdak/snac_44khz",
                         ("DAC", "16khz") => "descript/dac_16khz",
-                        ("DAC", "24khz") => "descript/dac_24khz", 
+                        ("DAC", "24khz") => "descript/dac_24khz",
                         ("DAC", "44.1khz") => "descript/dac_44khz",
                         ("DAC", "44.1khz-16kbps") => @"https://github.com/descriptinc/descript-audio-codec/",
                         _ => throw new InvalidDataException("Selection was invalid")
@@ -74,9 +71,9 @@ namespace NeuralCodecs.Torch.Examples
 
                 var config = (codec, sampleRate) switch
                 {
-                    ("SNAC", "24khz") => (IModelConfig)SNACConfig.SNAC24Khz,
-                    ("SNAC", "32khz") => (IModelConfig)SNACConfig.SNAC32Khz,
-                    ("SNAC", "44.1khz") => (IModelConfig)SNACConfig.SNAC44Khz,
+                    ("SNAC", "24khz") => (IModelConfig)SNACConfig.SNAC24kHz,
+                    ("SNAC", "32khz") => (IModelConfig)SNACConfig.SNAC32kHz,
+                    ("SNAC", "44.1khz") => (IModelConfig)SNACConfig.SNAC44kHz,
                     ("DAC", "16khz") => (IModelConfig)DACConfig.DAC16kHz,
                     ("DAC", "24khz") => (IModelConfig)DACConfig.DAC24kHz,
                     ("DAC", "44.1khz") => (IModelConfig)DACConfig.DAC44kHz,
@@ -113,7 +110,7 @@ namespace NeuralCodecs.Torch.Examples
                             }
                             else
                             {
-                                await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config, ctx:ctx);
+                                await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config, ctx: ctx);
                             }
                         });
                     AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
@@ -121,7 +118,6 @@ namespace NeuralCodecs.Torch.Examples
                     if (AnsiConsole.Confirm("Would you like to visualize the audio?"))
                     {
                         AnsiConsole.WriteLine();
-
 
                         AnsiConsole.WriteLine("Opening image...");
                         var t = new Table();
@@ -149,6 +145,7 @@ namespace NeuralCodecs.Torch.Examples
 
             AnsiConsole.MarkupLine("[blue]Exiting...[/]");
         }
+
         public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config, StatusContext? ctx = null)
         {
             Report("Creating Model...", ctx);
@@ -165,9 +162,8 @@ namespace NeuralCodecs.Torch.Examples
 
             Report("Saving Audio...", ctx);
             SaveAudio(outputPath, processedAudio, model.Config.SamplingRate);
-
-
         }
+
         public static async Task DACEncodeDecode(string modelPath, string inputPath, string outputPath, DACConfig config, bool useAudioSignal = true, StatusContext? ctx = null)
         {
             Report("Creating Model...", ctx);

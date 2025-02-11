@@ -24,16 +24,6 @@ public class L1Loss : AudioLossBase
 
     public override Tensor forward(Tensor x, Tensor y)
     {
-        //var (xAudio, isXSignal) = GetAudioTensor(x);
-        //var (yAudio, isYSignal) = GetAudioTensor(y);
-
-        //if (isXSignal && isYSignal && _attribute != "audio_data")
-        //{
-        //    // Use reflection only if both are AudioSignal and different attribute requested
-        //    xAudio = (Tensor)typeof(AudioSignal).GetProperty(_attribute).GetValue((AudioSignal)x);
-        //    yAudio = (Tensor)typeof(AudioSignal).GetProperty(_attribute).GetValue((AudioSignal)y);
-        //}
-
         return _l1Loss.forward(x, y) * _weight;
     }
 }

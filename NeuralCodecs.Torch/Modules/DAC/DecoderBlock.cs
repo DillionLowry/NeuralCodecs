@@ -61,9 +61,8 @@ public class DecoderBlock : Module<Tensor, Tensor>, IDisposable
         }
     }
 
-    /// <summary>
-    /// Disposes the resources used by this decoder block.
-    /// </summary>
+    
+    /// <inheritdoc/>
     public void Dispose()
     {
         Dispose(disposing: true);

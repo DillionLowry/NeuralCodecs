@@ -1,4 +1,3 @@
-using System.Text;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -29,8 +28,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
     {
         strides ??= [2, 4, 8, 8];
 
-
-
         var layers = new List<Module<Tensor, Tensor>>
         {
             // First convolution layer
@@ -42,7 +39,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
         {
             dModel *= 2;
             layers.Add(new EncoderBlock(dModel, stride: stride));
-
         }
 
         // Add final layers
@@ -55,8 +51,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
         block = Sequential(layers);
         _encoderDim = dModel;
         RegisterComponents();
-
-
     }
 
     /// <summary>
@@ -65,7 +59,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
     /// <param name="x">Input tensor</param>
     /// <returns>Encoded representation of the input</returns>
     public override Tensor forward(Tensor x) => block.forward(x);
-
 
     public new void Dispose()
     {

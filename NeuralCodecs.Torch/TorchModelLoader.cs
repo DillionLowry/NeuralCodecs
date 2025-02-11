@@ -308,7 +308,6 @@ public class TorchModelLoader : IModelLoader
     private async Task<TConfig> LoadAndValidateConfig<TConfig>(string path)
         where TConfig : IModelConfig
     {
-       
         if (!File.Exists(path))
         {
             throw new LoadException($"Config file not found at {path}");
@@ -399,7 +398,6 @@ public class TorchModelLoader : IModelLoader
                 {
                     _repository = new GitHubRepository();
                     options.Revision = config.Version;
-
                 }
                 // path of the model file in the repository
                 var modelMetadata = await _repository.GetModelInfo(source, options.Revision);
