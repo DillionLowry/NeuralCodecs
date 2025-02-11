@@ -220,13 +220,6 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         }
         catch (Exception ex) when (ex is not (FileNotFoundException))
         {
-            // TODO
-            // Write state_dict to console
-            foreach (var (key, value) in this.state_dict())
-            {
-                Console.WriteLine($"{key}: {value}");
-            }
-
             throw new InvalidOperationException($"Failed to load PyTorch weights from {path} {ex.Message}", ex);
         }
     }

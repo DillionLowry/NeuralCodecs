@@ -7,16 +7,17 @@ using TorchSharp.PyBridge;
 using static TorchSharp.torch;
 
 // Based on TorchSharp.PyBridge.PytorchUnpickler
+// NC prefix is used to avoid conflicts with existing classes
 namespace NeuralCodecs.Torch.Config.DAC
 {
     public class DACUnpickler
     {
-        private class CustomUnpickler : Unpickler
+        private class CustomDACUnpickler : Unpickler
         {
             private readonly ZipArchive _archive;
             private bool _skipTensorRead;
 
-            public CustomUnpickler(ZipArchive archive, bool skipTensorRead = false)
+            public CustomDACUnpickler(ZipArchive archive, bool skipTensorRead = false)
             {
                 _archive = archive ?? throw new ArgumentNullException(nameof(archive));
                 _skipTensorRead = skipTensorRead;
@@ -41,7 +42,7 @@ namespace NeuralCodecs.Torch.Config.DAC
                 if (entry.Entry == null)
                     throw new InvalidOperationException($"Archive entry not found: data/{archiveKey}");
 
-                return new TensorStream
+                return new NCTensorStream
                 {
                     ArchiveIndex = entry.Index,
                     ArchiveEntry = entry.Entry,
@@ -85,7 +86,7 @@ namespace NeuralCodecs.Torch.Config.DAC
                     {
                         dict[key] = tensor;
                     }
-                    else if (entry.Value is TensorConstructorArgs args)
+                    else if (entry.Value is NCTensorConstructorArgs args)
                     {
                         dict[key] = args.ReadTensorFromStream();
                     }
@@ -104,7 +105,7 @@ namespace NeuralCodecs.Torch.Config.DAC
             }
         }
 
-        internal class TensorConstructorArgs
+        internal class NCTensorConstructorArgs
         {
             private bool _alreadyRead;
 
@@ -137,7 +138,7 @@ namespace NeuralCodecs.Torch.Config.DAC
             }
         }
 
-        private class TensorStream
+        private class NCTensorStream
         {
             public int ArchiveIndex { get; init; }
 
@@ -148,12 +149,12 @@ namespace NeuralCodecs.Torch.Config.DAC
             public bool SkipTensorRead { get; init; }
         }
 
-        private class TensorObjectConstructor : IObjectConstructor
+        private class NCTensorObjectConstructor : IObjectConstructor
         {
             public object construct(object[] args)
             {
-                TensorStream tensorStream = (TensorStream)args[0];
-                TensorConstructorArgs tensorConstructorArgs = new TensorConstructorArgs
+                NCTensorStream tensorStream = (NCTensorStream)args[0];
+                NCTensorConstructorArgs tensorConstructorArgs = new NCTensorConstructorArgs
                 {
                     ArchiveIndex = tensorStream.ArchiveIndex,
                     Data = tensorStream.ArchiveEntry.Open(),
@@ -183,8 +184,8 @@ namespace NeuralCodecs.Torch.Config.DAC
         static DACUnpickler()
         {
             // Register our custom constructors
-            Unpickler.registerConstructor("torch._utils", "_rebuild_tensor", new TensorObjectConstructor());
-            Unpickler.registerConstructor("torch._utils", "_rebuild_tensor_v2", new TensorObjectConstructor());
+            Unpickler.registerConstructor("torch._utils", "_rebuild_tensor", new NCTensorObjectConstructor());
+            Unpickler.registerConstructor("torch._utils", "_rebuild_tensor_v2", new NCTensorObjectConstructor());
             Unpickler.registerConstructor("collections", "OrderedDict", new DACDictConstructor());
         }
 
@@ -210,9 +211,6 @@ namespace NeuralCodecs.Torch.Config.DAC
 
             // Convert weights using dynamic converter
             var normalizedDict = StateDictNameConverter.ConvertStateDict(stateDict, fromSafetensor: true);
-
-            // Verify all required weights are present
-            //StateDictNameConverter.VerifyWeights(normalizedDict);
 
             return new DACWeights(normalizedDict);
         }
@@ -241,7 +239,7 @@ namespace NeuralCodecs.Torch.Config.DAC
             var entry = archive.Entries.FirstOrDefault(e => e.Name.EndsWith("data.pkl")) ??
                 throw new InvalidOperationException("Model archive missing data.pkl");
 
-            var unpickler = new CustomUnpickler(archive);
+            var unpickler = new CustomDACUnpickler(archive);
             var result = unpickler.load(entry.Open()) as Hashtable ??
                 throw new InvalidOperationException("Failed to unpickle model data");
 

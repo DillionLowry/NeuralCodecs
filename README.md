@@ -4,12 +4,14 @@ NeuralCodecs is a .NET library for neural audio codec implementations, designed 
 
 ## Features
 - **SNAC**: [Multi-**S**cale **N**eural **A**udio **C**odec](https://github.com/hubertsiuzdak/snac)
-
-## Work In Progress
 - **DAC**: [Descript Audio Codec](https://github.com/descriptinc/descript-audio-codec)
+- **Audio Visualization**: Built-in spectrogram generation and comparison tools
 
 ## Requirements
-- Torchsharp or libTorch targeting your desired platform
+- .NET 8.0 or later
+- TorchSharp or libTorch compatible with your platform
+- NAudio (for audio processing)
+- SkiaSharp (for visualization features)
 
 ## Usage
 
@@ -17,7 +19,7 @@ NeuralCodecs is a .NET library for neural audio codec implementations, designed 
 
 There are several ways to load a model:
 
-1. Using static factory method:
+1. #### Using static factory method:
 ```csharp
 // Load SNAC model with static method provided for built-in models
 var model = await NeuralCodecs.CreateSNACAsync("model.pt");
@@ -29,7 +31,7 @@ var model = await NeuralCodecs.CreateSNACAsync("model.pt");
 var model = await NeuralCodecs.CreateSNACAsync(modelPath, SNACConfig.SNAC24Khz);
 ```
 
-3. #### Using IModelLoader instance with default config 
+3. #### Using IModelLoader instance with default config:
     Allows the use of custom loader implementations
 ```csharp
 // Load model with default config from IModelLoader instance
@@ -83,6 +85,19 @@ await using var writer = new WaveFileWriter(
 );
 writer.WriteSamples(processedAudio, 0, processedAudio.Length);
 ```
+
+## Example
+
+Check out the Example project for a complete implementation, including:
+- Model loading and configuration
+- Audio processing workflows
+- Command-line interface implementation
+- Audio Visualization
+
+The example includes tools for visualizing and comparing audio spectrograms:
+
+DAC Codec 24kHz before and after compression
+<img src="Docs/Images/spectrogram_DAC_24k.png" width="500" height="300">
 
 ## Acknowledgments
 - [SNAC](https://github.com/hubertsiuzdak/snac) - Original SNAC implementation
