@@ -1,8 +1,6 @@
-using NeuralCodecs.Core.Utils;
 using NeuralCodecs.Torch.Utils;
 using System.Diagnostics;
 using TorchSharp;
-using static Tensorboard.Summary.Types;
 using static TorchSharp.torch;
 using Complex = System.Numerics.Complex;
 
@@ -90,40 +88,6 @@ namespace NeuralCodecs.Torch.AudioTools
         }
 
         /// <summary>
-        /// Converts deinterleaved stereo audio (LL...RR...) to interleaved (LRLR...).
-        /// </summary>
-        /// <param name="deinterleavedAudio">Deinterleaved audio tensor of shape (batch_size, 2, samples).</param>
-        /// <returns>Interleaved audio tensor of shape (batch_size, 2, samples).</returns>
-        public static Tensor DeinterleaveToInterleave(Tensor deinterleavedAudio)
-        {
-            if (deinterleavedAudio.size(1) != 2)
-            {
-                throw new ArgumentException("Input must be stereo (2 channels)");
-            }
-
-            var batchSize = deinterleavedAudio.size(0);
-            var samplesPerChannel = deinterleavedAudio.size(2) / 2;
-            var result = zeros_like(deinterleavedAudio);
-
-            for (int b = 0; b < batchSize; b++)
-            {
-                // Extract left and right channels
-                var leftRange = arange(0, samplesPerChannel);
-                var left = deinterleavedAudio[b, 0].index(leftRange);
-                var right = deinterleavedAudio[b, 1].index(leftRange);
-
-                // Store in interleaved format (alternating L and R samples)
-                for (int i = 0; i < samplesPerChannel; i++)
-                {
-                    result[b, 0, i * 2] = left[i];
-                    result[b, 0, (i * 2) + 1] = right[i];
-                }
-            }
-
-            return result;
-        }
-
-        /// <summary>
         /// Gets an appropriate window function for STFT operations.
         /// </summary>
         /// <param name="windowType">Type of window (e.g., "hann", "hamming", "blackman")</param>
@@ -148,52 +112,6 @@ namespace NeuralCodecs.Torch.AudioTools
             };
 
             return window.to(device).@float();
-        }
-
-        /// <summary>
-        /// Converts interleaved stereo audio (LRLR...) to deinterleaved (LL...RR...).
-        /// </summary>
-        /// <param name="interleavedAudio">Interleaved audio tensor of shape (batch_size, 2, samples).</param>
-        /// <returns>Deinterleaved audio tensor of shape (batch_size, 2, samples).</returns>
-        public static Tensor InterleaveToDeinterleave(Tensor interleavedAudio)
-        {
-
-            return torch.tensor(AudioUtils.InterleaveToDeinterleave2d(interleavedAudio.cpu().detach().data<float>().ToArray()));
-            //long batchSize = interleavedAudio.shape[0];
-            //long samplesPerBatch = interleavedAudio.shape[2];
-
-            //if (samplesPerBatch % 2 != 0)
-            //    throw new ArgumentException("Each row must have an even number of samples", nameof(interleavedAudio));
-
-            //long samplesPerChannel = samplesPerBatch / 2;
-            //long totalSamplesPerChannel = batchSize * samplesPerChannel;
-
-            //// Create the result tensor
-            //var result = torch.zeros(new long[] { 2, totalSamplesPerChannel },
-            //    dtype: interleavedAudio.dtype,
-            //    device: interleavedAudio.device);
-
-            //// Process each batch
-            //for (long b = 0; b < batchSize; b++)
-            //{
-            //    // Get the current batch of interleaved audio
-            //    var batch = interleavedAudio[b];
-
-            //    // Even indices for left channel
-            //    var evenIndices = torch.arange(0, samplesPerBatch, 2, dtype: torch.int64, device: interleavedAudio.device);
-            //    var leftChannel = torch.index_select(batch, 0, evenIndices);
-
-            //    // Odd indices for right channel
-            //    var oddIndices = torch.arange(1, samplesPerBatch, 2, dtype: torch.int64, device: interleavedAudio.device);
-            //    var rightChannel = torch.index_select(batch, 0, oddIndices);
-
-            //    // Place in the result tensor
-            //    var resultOffset = b * samplesPerChannel;
-            //    result[0].narrow(0, resultOffset, samplesPerChannel).copy_(leftChannel);
-            //    result[1].narrow(0, resultOffset, samplesPerChannel).copy_(rightChannel);
-            //}
-
-            //return result;
         }
 
         /// <summary>
@@ -882,7 +800,7 @@ namespace NeuralCodecs.Torch.AudioTools
             );
 
             // Calculate expected dimensions
-            var freqBins = windowLength / 2 + 1;
+            var freqBins = (windowLength / 2) + 1;
 
             // Reshape back to (batch, channels, freq, time)
             var reshapedStft = stftResult.reshape(batchSize, channels, freqBins, -1);
