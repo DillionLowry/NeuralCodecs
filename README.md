@@ -4,8 +4,24 @@ NeuralCodecs is a .NET library for neural audio codec implementations, designed 
 
 ## Features
 - **SNAC**: [Multi-**S**cale **N**eural **A**udio **C**odec](https://github.com/hubertsiuzdak/snac)
+  - Support for multiple sampling rates: 24kHz, 32kHz, and 44.1kHz
+  - Attention mechanisms with adjustable window sizes for improved quality
+  - Automatic resampling for input flexibility
 - **DAC**: [Descript Audio Codec](https://github.com/descriptinc/descript-audio-codec)
-- **Audio Visualization**: Built-in spectrogram generation and comparison tools
+  - Supports multiple sampling rates: 16kHz, 24kHz, and 44.1kHz
+  - Configurable encoder/decoder architecture with variable rates
+  - Flexible bitrate configurations from 8kbps to 16kbps
+- **Encodec**: [Meta's Encodec neural audio compression](https://github.com/facebookresearch/encodec)
+  - Supports stereo audio at 24kHz and 48kHz sample rates
+  - Variable bitrate compression (1.5-24 kbps)
+  - Neural language model for enhanced compression quality
+  - Direct file compression to .ecdc format
+- **AudioTools**: Advanced audio processing utilities
+  - Based on Descript's [audiotools](https://github.com/descriptinc/audiotools) Python package
+  - Extended with .NET-specific optimizations and additional features
+  - Audio filtering, transformation, and effects processing
+  - Works with Descript's AudioSignal or Tensors
+- **Audio Visualization**: Example project includes spectrogram generation and comparison tools
 
 ## Requirements
 - .NET 8.0 or later
@@ -41,8 +57,14 @@ var model = await torchLoader.LoadModelAsync<SNAC, SNACConfig>("model.pt");
 
 4. #### Using IModelLoader instance with custom config:
 ```csharp
-var config = new SNACConfig { /* ... */ };
-var model = await torchLoader.LoadModelAsync<SNAC, SNACConfig>("model.pt", config);
+// For Encodec with custom bandwidth and settings
+var encodecConfig = new EncodecConfig { 
+    SampleRate = 48000,
+    Bandwidth = 12.0f,
+    Channels = 2,  // Stereo audio
+    Normalize = true
+};
+var encodecModel = await torchLoader.LoadModelAsync<Encodec, EncodecConfig>("encodec_model.pt", encodecConfig);
 ```
 
 5. #### Using factory method for custom models:
@@ -53,6 +75,37 @@ var model = await torchLoader.LoadModelAsync<CustomModel, CustomConfig>(
     "model.pt",
     config => new CustomModel(config, ...),
     config);
+```
+
+Models can be loaded in Pytorch or Safetensors format.
+
+### AudioTools Features
+
+The AudioTools namespace provides extensive audio processing capabilities:
+
+```csharp
+// Load and normalize audio
+var audioData = AudioLoader.LoadFile("input.wav");
+var normalizedAudio = AudioProcessor.Normalize(audioData);
+
+// Apply effects
+var enhancedAudio = AudioProcessor.ApplyEffect(normalizedAudio, new ReverbEffect {
+    RoomSize = 0.7f,
+    Damping = 0.5f
+});
+
+// Generate spectrograms
+using var spectrogram = SpectrogramGenerator.Generate(
+    audioData, 
+    new SpectrogramOptions { 
+        WindowSize = 2048,
+        HopSize = 512
+    }
+);
+
+// Compare audio quality
+var metrics = AudioQualityAnalyzer.Compare(originalAudio, processedAudio);
+Console.WriteLine($"PESQ Score: {metrics.PESQ}, STOI: {metrics.STOI}");
 ```
 
 ### Encoding and Decoding Audio
@@ -81,9 +134,31 @@ var processedAudio = model.Decode(codes);
 // using NAudio
 await using var writer = new WaveFileWriter(
     outputPath,
-    new WaveFormat(model.Config.SamplingRate, 1)
+    new WaveFormat(model.Config.SamplingRate, channels: model.Channels)
 );
 writer.WriteSamples(processedAudio, 0, processedAudio.Length);
+```
+### Encodec-Specific Features
+
+Encodec provides additional capabilities:
+
+```csharp
+// Set target bandwidth for compression (supported values depend on model)
+encodecModel.SetTargetBandwidth(12.0f); // 12 kbps
+
+// Get available bandwidth options
+var availableBandwidths = encodecModel.TargetBandwidths; // e.g. [1.5, 3, 6, 12, 24]
+
+// Use language model for enhanced compression quality
+var lm = await encodecModel.GetLanguageModel();
+// Apply LM during encoding/decoding for better quality
+
+// Direct file compression
+await EncodecCompressor.CompressToFileAsync(encodecModel, audioTensor, "audio.ecdc", useLm: true);
+
+// Decompress from file
+var (decompressedAudio, sampleRate) = await EncodecCompressor.DecompressFromFileAsync("audio.ecdc");
+
 ```
 
 ## Example
@@ -102,6 +177,7 @@ DAC Codec 24kHz before and after compression
 ## Acknowledgments
 - [SNAC](https://github.com/hubertsiuzdak/snac) - Original SNAC implementation
 - [Descript Audio Codec](https://github.com/descriptinc/descript-audio-codec) - DAC reference
+- [Encodec](https://github.com/facebookresearch/encodec) - Meta's neural audio codec
 
 ## Contributing
 Suggestions and contributions are welcome! Feel free to submit a pull request.

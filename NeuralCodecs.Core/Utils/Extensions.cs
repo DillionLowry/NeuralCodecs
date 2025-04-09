@@ -62,7 +62,7 @@ internal static class Extensions
         IProgress<long>? progress = null,
         CancellationToken ct = default)
     {
-        return CopyToAsync(source, destination, 81920, progress, ct);
+        return source.CopyToAsync(destination, 81920, progress, ct);
     }
 
     /// <summary>

@@ -99,7 +99,7 @@ public class MelSpectrogramLoss : AudioLossBase
         }
         else if (input is Tensor audio)
         {
-            return AudioTensorOps.ComputeMelSpectrogram(
+            return DSP.MelSpectrogram(
                 audio,
                 _sampleRate,
                 nMels,
@@ -112,7 +112,7 @@ public class MelSpectrogramLoss : AudioLossBase
         }
         throw new ArgumentException("Input must be AudioSignal or Tensor");
     }
-    // device: x is AudioSignal signal ? signal.device :
+
     public override Tensor forward(Tensor x, Tensor y)
     {
         var loss = zeros(1, device: x.device);

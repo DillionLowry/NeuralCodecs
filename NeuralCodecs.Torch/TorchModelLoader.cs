@@ -7,8 +7,10 @@ using NeuralCodecs.Core.Loading.Cache;
 using NeuralCodecs.Core.Loading.Repository;
 using NeuralCodecs.Core.Validation;
 using NeuralCodecs.Torch.Config.DAC;
+using NeuralCodecs.Torch.Config.Encodec;
 using NeuralCodecs.Torch.Config.SNAC;
 using NeuralCodecs.Torch.Models;
+using NeuralCodecs.Torch.Modules.Encodec;
 using System.Text.Json;
 
 namespace NeuralCodecs.Torch;
@@ -23,7 +25,6 @@ public class TorchModelLoader : IModelLoader
 
     private readonly IModelCache _cache;
     private readonly ModelRegistry _registry;
-    private IModelRepository _repository;
     private readonly Dictionary<Type, object> _validators = new();
 
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
@@ -47,7 +48,6 @@ public class TorchModelLoader : IModelLoader
         IModelValidator<IModelConfig>? validator = null)
     {
         _cache = cache ?? new DefaultModelCache();
-        _repository = repository ?? new HuggingFaceRepository();
         if (validator != null)
         {
             RegisterValidator(validator);
@@ -103,7 +103,7 @@ public class TorchModelLoader : IModelLoader
         {
             if (IsLocalPath(source))
             {
-                return await GetLocalModelInfo(source);
+                return GetLocalModelInfo(source);
             }
             else
             {
@@ -201,8 +201,6 @@ public class TorchModelLoader : IModelLoader
 
             await LoadWeights(model, path, options?.ValidateModel ?? false);
 
-            await Task.Run(() => model.LoadWeights(path));
-
             if (_validators.TryGetValue(config.GetType(), out var validatorObj))
             {
                 var validator = validatorObj as IModelValidator<IModelConfig>
@@ -243,6 +241,9 @@ public class TorchModelLoader : IModelLoader
 
         registry.RegisterModel<SNAC, SNACConfig>((config) => new SNAC(config));
         registry.RegisterModel<DAC, DACConfig>((config) => new DAC(config));
+        registry.RegisterModel<Encodec, EncodecConfig>((config) => new Encodec(config));
+        registry.RegisterModel<EncodecLanguageModel, EncodecLanguageModelConfig>((config) => new EncodecLanguageModel(config));
+
         return registry;
     }
 
@@ -262,7 +263,7 @@ public class TorchModelLoader : IModelLoader
         return configPath;
     }
 
-    private async Task<ModelMetadata?> GetLocalModelInfo(string path)
+    private ModelMetadata? GetLocalModelInfo(string path)
     {
         if (!File.Exists(path))
         {
@@ -284,7 +285,8 @@ public class TorchModelLoader : IModelLoader
     {
         try
         {
-            var modelInfo = await _repository.GetModelInfo(source, revision);
+            var repository = GetRepositoryForSource(source);
+            var modelInfo = await repository.GetModelInfo(source, revision);
             var cachedPath = await _cache.GetCachedPath(source, revision);
 
             return new ModelMetadata
@@ -394,13 +396,17 @@ public class TorchModelLoader : IModelLoader
 
             if (modelPath == null)
             {
-                if (source.Contains("github", StringComparison.InvariantCultureIgnoreCase))
+                // Get the appropriate repository for this source
+                var repository = GetRepositoryForSource(source);
+                
+                // If it's GitHub, set the revision from config
+                if (repository is GitHubRepository && !string.IsNullOrEmpty(config.Version))
                 {
-                    _repository = new GitHubRepository();
                     options.Revision = config.Version;
                 }
-                // path of the model file in the repository
-                var modelMetadata = await _repository.GetModelInfo(source, options.Revision);
+                
+                // Path of the model file in the repository
+                var modelMetadata = await repository.GetModelInfo(source, options.Revision);
 
                 var tempDir = Path.Combine(Path.GetTempPath(), $"neural_codecs_{Guid.NewGuid()}");
                 Directory.CreateDirectory(tempDir);
@@ -410,7 +416,7 @@ public class TorchModelLoader : IModelLoader
                     var progress = new Progress<double>(p =>
                         OnProgress?.Invoke(this, new LoadProgressEventArgs(source, p)));
 
-                    await _repository.DownloadModel(source, tempDir, progress, options);
+                    await repository.DownloadModel(source, tempDir, progress, options);
 
                     modelPath = await _cache.CacheModel(
                         modelMetadata.Source,
@@ -443,6 +449,38 @@ public class TorchModelLoader : IModelLoader
         }
     }
 
+    /// <summary>
+    /// Gets the appropriate model repository for the given source.
+    /// </summary>
+    /// <param name="source">The model source URL or identifier.</param>
+    /// <returns>An IModelRepository implementation suitable for the source.</returns>
+    private IModelRepository GetRepositoryForSource(string source)
+    {
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uri))
+        {
+            // Direct URL repositories by domain
+            if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return new GitHubRepository();
+            }
+            
+            // For dl.fbaipublicfiles.com or any other direct URL
+            var directUrlRepo = new DirectUrlRepository();
+            if (directUrlRepo.CanHandleUrl(source))
+            {
+                return directUrlRepo;
+            }
+        }
+        
+        // Handle Hugging Face model ID format (owner/repo)
+        if (source.Count(c => c == '/') == 1 && !source.Contains(':'))
+        {
+            return new HuggingFaceRepository();
+        }
+
+        throw new InvalidDataException($"Unsupported model source: {source}");
+    }
+
     private async Task LoadWeights(INeuralCodec model, string path, bool validate)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
@@ -453,16 +491,153 @@ public class TorchModelLoader : IModelLoader
             cts.Token.ThrowIfCancellationRequested();
         }, cts.Token);
 
-        if (validate && _validators.TryGetValue(model.Config.GetType(), out var validatorObj))
+        if (validate && _validators.TryGetValue(model.Config.GetType(), out var validatorObj) 
+            && validatorObj is IModelValidator<IModelConfig> validator)
         {
-            if (validatorObj is IModelValidator<IModelConfig> validator)
+            var validationResult = await validator.ValidateModel(model, model.Config);
+            if (!validationResult.IsValid)
             {
-                var validationResult = await validator.ValidateModel(model, model.Config);
-                if (!validationResult.IsValid)
-                {
-                    throw new LoadException($"Model validation failed: {string.Join(", ", validationResult.Errors)}");
-                }
+                throw new LoadException($"Model validation failed: {string.Join(", ", validationResult.Errors)}");
             }
         }
     }
+
+    /// <summary>
+    /// Loads a model asynchronously without requiring a configuration.
+    /// The model will be created with its built-in class defaults.
+    /// </summary>
+    /// <typeparam name="TModel">The type of model to load.</typeparam>
+    /// <param name="path">The path or identifier of the model to load.</param>
+    /// <param name="options">Optional loading options.</param>
+    /// <returns>The loaded model instance.</returns>
+    public async Task<TModel> LoadModelAsync<TModel>(string path, ModelLoadOptions? options = null)
+        where TModel : class, INeuralCodec
+    {
+        options ??= new ModelLoadOptions { ValidateModel = false };
+        
+        // Get the model path (handle remote models)
+        string modelPath = path;
+        if (!IsLocalPath(path))
+        {
+            modelPath = await GetRemoteModelPath(path, options);
+        }
+        
+        // Verify the model file exists
+        if (!File.Exists(modelPath))
+        {
+            if (modelPath.Contains(".cache"))
+            {
+                _cache.ClearCache();
+                throw new CacheException($"Model file not found at {modelPath}. Clearing Cache.");
+            }
+            throw new LoadException($"Model file not found at {modelPath}");
+        }
+
+        try
+        {
+            // Instantiate the model using its default constructor
+            var model = Activator.CreateInstance<TModel>();
+            
+            // Load the weights
+            await LoadWeights(model, modelPath, options.ValidateModel);
+            
+            return model;
+        }
+        catch (MissingMethodException)
+        {
+            throw new LoadException($"Model type {typeof(TModel).Name} must have a parameterless constructor to load without configuration");
+        }
+        catch (Exception ex) when (ex is not (LoadException or CacheException))
+        {
+            OnError?.Invoke(this, new LoadErrorEventArgs(path, ex));
+            throw new LoadException($"Failed to load model: {path}. {ex.Message}", ex);
+        }
+    }
+
+    ///// <summary>
+    ///// Loads a model asynchronously by detecting its type from the file structure.
+    ///// No configuration is required as the model will use its built-in defaults.
+    ///// </summary>
+    ///// <param name="path">The path or identifier of the model to load.</param>
+    ///// <param name="options">Optional loading options.</param>
+    ///// <returns>The loaded neural codec model instance.</returns>
+    //public async Task<INeuralCodec> LoadModelWithoutConfigAsync(string path, ModelLoadOptions? options = null)
+    //{
+    //    options ??= new ModelLoadOptions 
+    //    { 
+    //        ValidateModel = false,
+    //        RequireConfig = false
+    //    };
+        
+    //    // Get the model path (handle remote models)
+    //    string modelPath = path;
+    //    if (!IsLocalPath(path))
+    //    {
+    //        modelPath = await GetRemoteModelPath(path, options);
+    //    }
+        
+    //    // Create model instance based on file inspection
+    //    var modelInstance = await ModelInstantiator.CreateModelInstanceFromFile(modelPath);
+        
+    //    // Load the weights
+    //    await LoadWeights(modelInstance, modelPath, options.ValidateModel);
+        
+    //    return modelInstance;
+    //}
+
+    /// <summary>
+    /// Downloads a remote model and returns the local path
+    /// </summary>
+    private async Task<string> GetRemoteModelPath(string source, ModelLoadOptions options)
+    {
+        var modelPath = !options.ForceReload
+            ? await _cache.GetCachedPath(source, options.Revision)
+            : null;
+
+        if (modelPath == null)
+        {
+            // Get the appropriate repository for this source
+            var repository = GetRepositoryForSource(source);
+            
+            // Path of the model file in the repository
+            var modelMetadata = await repository.GetModelInfo(source, options.Revision);
+
+            var tempDir = Path.Combine(Path.GetTempPath(), $"neural_codecs_{Guid.NewGuid()}");
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                var progress = new Progress<double>(p =>
+                    OnProgress?.Invoke(this, new LoadProgressEventArgs(source, p)));
+
+                await repository.DownloadModel(source, tempDir, progress, options);
+
+                // If we don't require config files, we can skip passing the config filename
+                string configFileName = options.RequireConfig ? modelMetadata.ConfigFileName : "";
+                
+                modelPath = await _cache.CacheModel(
+                    modelMetadata.Source,
+                    tempDir,
+                    options.Revision,
+                    modelMetadata.FileName,
+                    configFileName
+                    );
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    try
+                    {
+                        Directory.Delete(tempDir, recursive: true);
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        return modelPath;
+    }
+
+
 }

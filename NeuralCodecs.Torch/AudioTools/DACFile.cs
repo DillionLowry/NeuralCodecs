@@ -10,14 +10,14 @@ public class DACFile : IDisposable
 {
     private bool _disposed = false;
 
-    public List<Tensor> Codes { get; private set; }
-    public DACConfig Config { get; private set; }
-
     public DACFile(List<Tensor> codes, DACConfig config)
     {
         Codes = codes;
         Config = config;
     }
+
+    public List<Tensor> Codes { get; private set; }
+    public DACConfig Config { get; private set; }
 
     /// <summary>
     /// Loads a DAC file from the specified path.
@@ -58,6 +58,12 @@ public class DACFile : IDisposable
         }
 
         return new DACFile(codes, config);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -111,11 +117,5 @@ public class DACFile : IDisposable
             }
             _disposed = true;
         }
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
     }
 }

@@ -48,5 +48,26 @@ namespace NeuralCodecs.Core.Loading
 
             return (TModel)factory(config);
         }
+
+        /// <summary>
+        /// Creates a model instance using the registered factory for the specified type.
+        /// </summary>
+        /// <typeparam name="TModel">The type of model to create.</typeparam>
+        /// <param name="config">The configuration to use for model creation.</param>
+        /// <returns>A new instance of the specified model type.</returns>
+        /// <exception cref="LoadException">Thrown when no factory is registered for the specified model type.</exception>
+        public TModel CreateModel<TModel>()
+            where TModel : class, INeuralCodec
+        {
+            var mType = typeof(TModel);
+
+            if (!_factories.TryGetValue(mType, out var factory))
+            {
+                throw new LoadException(
+                    $"No factory registered for type: {mType.Name}");
+            }
+
+            return (TModel)factory(null);
+        }
     }
 }

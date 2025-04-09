@@ -20,7 +20,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
     /// <param name="dModel">The initial dimension of the model (default: 64)</param>
     /// <param name="strides">Array of stride values for each encoder block (default: [2,4,8,8])</param>
     /// <param name="dLatent">The dimension of the latent space (default: 64)</param>
-    /// <param name="diagnostics">Optional diagnostics context</param>
     public Encoder(
         int dModel = 64,
         int[] strides = null,

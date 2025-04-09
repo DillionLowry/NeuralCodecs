@@ -81,7 +81,6 @@ namespace NeuralCodecs.Core.Loading.Cache
         {
             var targetDir = GetModelCacheDir(modelId, revision);
             var targetPath = Path.Combine(targetDir, targetFileName);
-            var targetConfigPath = Path.Combine(targetDir, targetConfigFileName);
 
             //await _cacheLock.WaitAsync();
             try
@@ -119,6 +118,8 @@ namespace NeuralCodecs.Core.Loading.Cache
 
                 if (!string.IsNullOrWhiteSpace(targetConfigFileName))
                 {
+                    var targetConfigPath = Path.Combine(targetDir, targetConfigFileName);
+
                     await using var source = File.OpenRead(Path.Combine(sourcePath, targetConfigFileName));
                     await using var targetConfig = File.OpenWrite(targetConfigPath);
                     await source.CopyToAsync(targetConfig);

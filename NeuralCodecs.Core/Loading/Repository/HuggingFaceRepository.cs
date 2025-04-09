@@ -88,7 +88,7 @@ namespace NeuralCodecs.Core.Loading.Repository
                 metadata.Files = await GetRepositoryFiles(modelId, revision ?? "main");
 
                 // Find model file
-                var modelFile = metadata.Files.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
+                var modelFile = metadata.Files.FirstOrDefault(f => FileUtils.IsValidModelFile(f.Path));
 
                 if (modelFile == null)
                 {
@@ -290,7 +290,7 @@ namespace NeuralCodecs.Core.Loading.Repository
             }
 
             // Verify model file exists
-            var modelFile = expectedFiles.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
+            var modelFile = expectedFiles.FirstOrDefault(f => FileUtils.IsValidModelFile(f.Path));
 
             if (modelFile == null)
             {
@@ -330,7 +330,7 @@ namespace NeuralCodecs.Core.Loading.Repository
             // Verify model file format
             if (options.ValidateModel)
             {
-                var fileType = await FileUtil.DetectFileTypeFromContentsAsync(modelPath);
+                var fileType = await FileUtils.DetectFileTypeFromContentsAsync(modelPath);
 
                 if (fileType is ModelFileType.Unknown)
                 {

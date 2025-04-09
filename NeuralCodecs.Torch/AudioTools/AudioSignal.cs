@@ -1,27 +1,32 @@
 using NAudio.Wave;
+using NeuralCodecs.Core.Utils;
 using System.Numerics;
+using System.Threading.Channels;
 using TorchSharp;
 using static TorchSharp.torch;
+using static TorchSharp.torch.nn;
 
 namespace NeuralCodecs.Torch.AudioTools;
 
 /// <summary>
 /// Represents an audio signal with support for batch processing, STFT analysis, and various audio transformations.
 /// Provides functionality for loading, manipulating, and analyzing audio data using TorchSharp tensors.
+/// Based on Descript's audiotools python library.
 /// </summary>
 public class AudioSignal : IDisposable
 {
     #region Fields
 
-    private static readonly Dictionary<(int SampleRate, int NfftSize, int NumMels, float FreqMin, float FreqMax), float[,]> _melFilterbankCache = new();
-    private static readonly Dictionary<(string WindowType, int WindowSize, string DeviceType), Tensor> _windowCache = new();
     private static readonly Dictionary<(int NumMfcc, int NumMels), Tensor> _dctMatrixCache = new();
+    private static readonly Dictionary<(int SampleRate, int NfftSize, int NumMels, float FreqMin, float FreqMax), float[,]> _melFilterbankCache = new();
+    private static readonly float _minLoudnessDb = -70.0f;
+    private static readonly Dictionary<(string WindowType, int WindowSize, string DeviceType), Tensor> _windowCache = new();
     private Tensor _audioData;
+    private bool _disposed = false;
     private Tensor _loudness;
     private int _originalSignalLength;
     private Tensor _stftData;
     private STFTParams _stftParams;
-    private static readonly float _minLoudnessDb = -70.0f;
 
     #endregion Fields
 
@@ -55,10 +60,9 @@ public class AudioSignal : IDisposable
             LoadFromArray(audioData, sampleRate, device);
         }
 
-        this._stftParams = stftParams;
+        _stftParams = stftParams;
     }
 
-    // note duration = self.num_frames / self.sample_rate
     public AudioSignal(string audioPath, float offset = 0, float? duration = null, string device = null)
     {
         using var reader = new AudioFileReader(audioPath);
@@ -83,8 +87,14 @@ public class AudioSignal : IDisposable
         while (remainingSamples > 0)
         {
             var samplesToRead = Math.Min(readBuffer.Length, remainingSamples);
+            // Adjust to ensure complete blocks
+            samplesToRead = samplesToRead - (samplesToRead % reader.WaveFormat.BlockAlign);
+
             var samplesRead = reader.Read(readBuffer, 0, samplesToRead);
-            if (samplesRead == 0) break;
+            if (samplesRead == 0)
+            {
+                break;
+            }
 
             buffer.AddRange(readBuffer.Take(samplesRead));
             remainingSamples -= samplesRead;
@@ -104,7 +114,7 @@ public class AudioSignal : IDisposable
 
         AudioData = tensor;
         SampleRate = sampleRate;
-        this.PathToFile = audioPath;
+        PathToFile = audioPath;
     }
 
     #endregion Constructors
@@ -122,7 +132,7 @@ public class AudioSignal : IDisposable
         {
             if (value is not null)
             {
-                if (!torch.is_tensor(value))
+                if (!is_tensor(value))
                 {
                     throw new ArgumentException("Audio data must be a torch Tensor");
                 }
@@ -156,13 +166,13 @@ public class AudioSignal : IDisposable
         {
             if (_stftData is null)
             {
-                Stft();
+                STFT();
             }
-            return torch.abs(_stftData);
+            return abs(_stftData);
         }
         set
         {
-            _stftData = value * torch.exp(Complex.ImaginaryOne * Phase);
+            _stftData = value * exp(Complex.ImaginaryOne * Phase);
         }
     }
 
@@ -187,13 +197,13 @@ public class AudioSignal : IDisposable
         {
             if (_stftData is null)
             {
-                Stft();
+                STFT();
             }
-            return torch.angle(_stftData);
+            return angle(_stftData);
         }
         set
         {
-            _stftData = Magnitude * torch.exp(Complex.ImaginaryOne * value);
+            _stftData = Magnitude * exp(Complex.ImaginaryOne * value);
         }
     }
 
@@ -219,11 +229,11 @@ public class AudioSignal : IDisposable
         {
             if (value is not null)
             {
-                if (!torch.is_tensor(value) || !value.is_complex())
+                if (!is_tensor(value) || !value.is_complex())
                 {
                     throw new ArgumentException("STFT data must be a complex torch Tensor");
                 }
-                if (_stftData is not null && !Enumerable.SequenceEqual(_stftData.shape, value.shape))
+                if (_stftData is not null && !_stftData.shape.SequenceEqual(value.shape))
                 {
                     Console.WriteLine("Warning: STFT data changed shape");
                 }
@@ -251,7 +261,7 @@ public class AudioSignal : IDisposable
                 hopLength: defaultHopLen,
                 windowType: defaultWinType,
                 matchStride: defaultMatchStride,
-                paddingType: defaultPaddingType
+                paddingMode: defaultPaddingType
             );
 
             if (value == null)
@@ -266,7 +276,7 @@ public class AudioSignal : IDisposable
                     hopLength: value.HopLength == 0 ? defaultParams.HopLength : value.HopLength,
                     windowType: value.WindowType ?? defaultParams.WindowType,
                     matchStride: value.MatchStride,
-                    paddingType: value.PaddingMode
+                    paddingMode: value.PaddingMode
                 );
             }
 
@@ -276,6 +286,40 @@ public class AudioSignal : IDisposable
     }
 
     #endregion Properties
+
+    #region Equality Members
+
+    public static bool operator !=(AudioSignal left, AudioSignal right)
+    {
+        return !Equals(left, right);
+    }
+
+    public static bool operator ==(AudioSignal left, AudioSignal right)
+    {
+        return Equals(left, right);
+    }
+
+    /// <inheritdoc/>
+    public override bool Equals(object? obj)
+    {
+        if (obj is AudioSignal other)
+        {
+            return _audioData.Equals(other._audioData) &&
+                   _loudness.Equals(other._loudness) &&
+                   _originalSignalLength == other._originalSignalLength &&
+                   _stftData.Equals(other._stftData) &&
+                   _stftParams.Equals(other._stftParams);
+        }
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(_originalSignalLength, _stftParams);
+    }
+
+    #endregion Equality Members
 
     #region Methods
 
@@ -374,7 +418,7 @@ public class AudioSignal : IDisposable
             }
         }
 
-        var audioData = torch.cat(audioSignals.Select(x => x.AudioData).ToList(), dim: dim);
+        var audioData = cat(audioSignals.Select(x => x.AudioData).ToList(), dim: dim);
         var audioPaths = audioSignals.Select(x => x.PathToFile).ToList();
 
         var batchedSignal = new AudioSignal(
@@ -393,11 +437,13 @@ public class AudioSignal : IDisposable
     public static AudioSignal ConcatBatch(List<AudioSignal> signals)
     {
         if (!signals.Any())
+        {
             throw new ArgumentException("No signals provided for concatenation");
+        }
 
         var firstSignal = signals[0];
         var tensorList = signals.Select(s => s.AudioData).ToList();
-        var concatenated = torch.cat(tensorList, dim: 0);
+        var concatenated = cat(tensorList, dim: 0);
 
         return new AudioSignal(concatenated, firstSignal.SampleRate, firstSignal._stftParams);
     }
@@ -439,15 +485,15 @@ public class AudioSignal : IDisposable
             Tensor window;
             if (windowType == "average")
             {
-                window = torch.ones(windowLength) / windowLength;
+                window = ones(windowLength) / windowLength;
             }
             else if (windowType == "sqrt_hann")
             {
-                window = torch.sqrt(torch.hann_window(windowLength));
+                window = sqrt(hann_window(windowLength));
             }
             else if (windowType == "hann")
             {
-                window = torch.hann_window(windowLength);
+                window = hann_window(windowLength);
             }
             else
             {
@@ -459,35 +505,7 @@ public class AudioSignal : IDisposable
         }
         return _windowCache[key];
     }
-    // todo
-    //public static Tensor GetWindow(string windowType, int windowLength, DeviceType device)
-    //{
-    //    var key = (windowType, windowLength, device);
-    //    if (!_windowCache.ContainsKey(key))
-    //    {
-    //        Tensor window;
-    //        if (windowType == "average")
-    //        {
-    //            window = torch.ones(windowLength) / windowLength;
-    //        }
-    //        else if (windowType == "sqrt_hann")
-    //        {
-    //            window = torch.sqrt(torch.hann_window(windowLength));
-    //        }
-    //        else if (windowType == "hann")
-    //        {
-    //            window = torch.hann_window(windowLength);
-    //        }
-    //        else
-    //        {
-    //            throw new ArgumentException($"Unsupported window type: {windowType}");
-    //        }
 
-    //        window = window.to(device).@float();
-    //        _windowCache[key] = window;
-    //    }
-    //    return _windowCache[key];
-    //}
     public static AudioSignal operator -(AudioSignal a, AudioSignal b)
     {
         var result = a.Clone();
@@ -502,7 +520,6 @@ public class AudioSignal : IDisposable
         return result;
     }
 
-    // Operator overloads
     public static AudioSignal operator +(AudioSignal a, AudioSignal b)
     {
         var result = a.Clone();
@@ -535,14 +552,14 @@ public class AudioSignal : IDisposable
         }
         else
         {
-            float loudness = float.NegativeInfinity;
+            float loudness;
             int numTry = 0;
             do
             {
                 excerpt = Excerpt(audioPath, state: state);
                 loudness = excerpt.Loudness().item<float>();
                 numTry++;
-                if (numTries != null && numTry >= numTries)
+                if (numTry >= numTries)
                 {
                     break;
                 }
@@ -568,29 +585,14 @@ public class AudioSignal : IDisposable
         string shape = "sine")
     {
         int nSamples = (int)(duration * sampleRate);
-        var t = torch.linspace(0, duration, nSamples);
-        Tensor waveData;
-
-        switch (shape.ToLower())
+        var t = linspace(0, duration, nSamples);
+        Tensor waveData = shape.ToLower() switch
         {
-            case "sawtooth":
-                waveData = 2 * (t * frequency - torch.floor(t * frequency + 0.5f));
-                break;
-
-            case "square":
-                waveData = torch.sign(torch.sin(2 * (float)Math.PI * frequency * t));
-                break;
-
-            case "triangle":
-                waveData = 2 * torch.abs(2 * (t * frequency - torch.floor(t * frequency + 0.5f))) - 1;
-                break;
-
-            case "sine":
-            default:
-                waveData = torch.sin(2 * (float)Math.PI * frequency * t);
-                break;
-        }
-
+            "sawtooth" => 2 * ((t * frequency) - floor((t * frequency) + 0.5f)),
+            "square" => sign(sin(2 * (float)Math.PI * frequency * t)),
+            "triangle" => (2 * abs(2 * ((t * frequency) - floor((t * frequency) + 0.5f)))) - 1,
+            _ => sin(2 * (float)Math.PI * frequency * t),
+        };
         waveData = waveData.unsqueeze(0).unsqueeze(0).repeat(1, numChannels, 1);
         return new AudioSignal(waveData, sampleRate);
     }
@@ -606,7 +608,7 @@ public class AudioSignal : IDisposable
     {
         int nSamples = (int)(duration * sampleRate);
         return new AudioSignal(
-            torch.zeros(batchSize, numChannels, nSamples),
+            zeros(batchSize, numChannels, nSamples),
             sampleRate);
     }
 
@@ -646,7 +648,7 @@ public class AudioSignal : IDisposable
             {
                 throw new ArgumentException("For match_stride, hop must equal window_length // 4");
             }
-            var rightPad = (int)Math.Ceiling((double)length / hopLength) * hopLength - length;
+            var rightPad = ((int)Math.Ceiling((double)length / hopLength) * hopLength) - length;
             var pad = (windowLength - hopLength) / 2;
             return (rightPad, pad);
         }
@@ -687,11 +689,11 @@ public class AudioSignal : IDisposable
         return this;
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
-        _audioData?.Dispose();
-        _stftData?.Dispose();
-        _loudness?.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -703,7 +705,7 @@ public class AudioSignal : IDisposable
         return this;
     }
 
-    public AudioSignal Istft(
+    public AudioSignal InverseSTFT(
         int? windowLength = null,
         int? hopLength = null,
         string windowType = null,
@@ -730,13 +732,13 @@ public class AudioSignal : IDisposable
         if (length == null)
         {
             length = _originalSignalLength;
-            length += 2 * pad + rightPad;
+            length += (2 * pad) + rightPad;
         }
 
         if (matchStride.Value)
         {
             // Add back the frames that were dropped in STFT
-            stftData = torch.nn.functional.pad(stftData, (2, 2));
+            stftData = nn.functional.pad(stftData, (2, 2));
         }
 
         var audioData = torch.istft(
@@ -761,7 +763,7 @@ public class AudioSignal : IDisposable
 
     public void LoadFromArray(Tensor audioArray, int sampleRate, string device = null)
     {
-        if (!torch.is_tensor(audioArray))
+        if (!is_tensor(audioArray))
         {
             throw new ArgumentException("Audio data must be a torch Tensor");
         }
@@ -776,56 +778,54 @@ public class AudioSignal : IDisposable
             audioArray = audioArray.unsqueeze(0);
         }
 
-        this._audioData = audioArray;
-        this._originalSignalLength = SignalLength;
-        this.SampleRate = sampleRate;
+        _audioData = audioArray;
+        _originalSignalLength = SignalLength;
+        SampleRate = sampleRate;
 
         if (!string.IsNullOrEmpty(device))
         {
-            this.To(device);
+            To(device);
         }
     }
 
     public void LoadFromFile(string audioPath, float offset = 0, float? duration = null, string device = null)
     {
-        using (var audioFile = new AudioFileReader(audioPath))
+        using var audioFile = new AudioFileReader(audioPath);
+        var buffer = new List<float>();
+        var readBuffer = new float[audioFile.WaveFormat.SampleRate * 4];
+        int samplesRead;
+
+        while ((samplesRead = audioFile.Read(readBuffer, 0, readBuffer.Length)) > 0)
         {
-            var buffer = new List<float>();
-            var readBuffer = new float[audioFile.WaveFormat.SampleRate * 4];
-            int samplesRead;
-
-            while ((samplesRead = audioFile.Read(readBuffer, 0, readBuffer.Length)) > 0)
-            {
-                buffer.AddRange(readBuffer.Take(samplesRead));
-            }
-
-            // Convert to mono if stereo
-            if (audioFile.WaveFormat.Channels > 1)
-            {
-                var monoBuffer = new List<float>();
-                for (int i = 0; i < buffer.Count; i += audioFile.WaveFormat.Channels)
-                {
-                    float sum = 0;
-                    for (int ch = 0; ch < audioFile.WaveFormat.Channels; ch++)
-                    {
-                        sum += buffer[i + ch];
-                    }
-                    monoBuffer.Add(sum / audioFile.WaveFormat.Channels);
-                }
-                buffer = monoBuffer;
-            }
-
-            var tensorData = torch.tensor(buffer.ToArray()).reshape(1, 1, -1);
-
-            if (duration.HasValue)
-            {
-                var endSample = (int)(offset + duration.Value) * SampleRate;
-                tensorData = tensorData.narrow(-1, (int)(offset * SampleRate), endSample);
-            }
-
-            LoadFromArray(tensorData, audioFile.WaveFormat.SampleRate, device);
-            PathToFile = audioPath;
+            buffer.AddRange(readBuffer.Take(samplesRead));
         }
+
+        // Convert to mono if stereo
+        if (audioFile.WaveFormat.Channels > 1)
+        {
+            var monoBuffer = new List<float>();
+            for (int i = 0; i < buffer.Count; i += audioFile.WaveFormat.Channels)
+            {
+                float sum = 0;
+                for (int ch = 0; ch < audioFile.WaveFormat.Channels; ch++)
+                {
+                    sum += buffer[i + ch];
+                }
+                monoBuffer.Add(sum / audioFile.WaveFormat.Channels);
+            }
+            buffer = monoBuffer;
+        }
+
+        var tensorData = tensor(buffer.ToArray()).reshape(1, 1, -1);
+
+        if (duration.HasValue)
+        {
+            var endSample = (int)(offset + duration.Value) * SampleRate;
+            tensorData = tensorData.narrow(-1, (int)(offset * SampleRate), endSample);
+        }
+
+        LoadFromArray(tensorData, audioFile.WaveFormat.SampleRate, device);
+        PathToFile = audioPath;
     }
 
     public Tensor LogMagnitude(float refValue = 1.0f, float amin = 1e-5f, float? topDb = 80.0f)
@@ -833,13 +833,13 @@ public class AudioSignal : IDisposable
         var magnitude = Magnitude;
         float aminSq = amin * amin;
 
-        var logSpec = 10.0f * torch.log10(magnitude.pow(2).clamp(min: aminSq));
+        var logSpec = 10.0f * log10(magnitude.pow(2).clamp(min: aminSq));
         logSpec -= 10.0f * (float)Math.Log10(Math.Max(aminSq, refValue));
 
         if (topDb.HasValue)
         {
             var maxVal = logSpec.max();
-            logSpec = torch.maximum(logSpec, maxVal - topDb.Value);
+            logSpec = maximum(logSpec, maxVal - topDb.Value);
         }
 
         return logSpec;
@@ -872,8 +872,8 @@ public class AudioSignal : IDisposable
         // Restore original length
         TruncateSamples(originalLength);
 
-        var minLoudness = torch.ones_like(loudness, device: loudness.device) * _minLoudnessDb;
-        _loudness = torch.maximum(loudness, minLoudness);
+        var minLoudness = ones_like(loudness, device: loudness.device) * _minLoudnessDb;
+        _loudness = maximum(loudness, minLoudness);
 
         return _loudness.to(Device);
     }
@@ -892,11 +892,11 @@ public class AudioSignal : IDisposable
         float? melFmax = null,
         Dictionary<string, object> stftParams = null)
     {
-        var stft = stftParams != null ? this.Stft() : this._stftData ?? this.Stft();
-        var magnitude = torch.abs(stft);
+        var stft = stftParams != null ? STFT() : _stftData ?? STFT();
+        var magnitude = abs(stft);
 
         int nf = (int)magnitude.size(2);
-        var melBasis = CreateMelFilterbankTensor(
+        var melBasis = MelFilterbank(
             SampleRate,
             2 * (nf - 1),
             nMels,
@@ -904,75 +904,22 @@ public class AudioSignal : IDisposable
             melFmax ?? SampleRate / 2f
         );
 
-        var melSpec = torch.matmul(magnitude.transpose(2, -1), melBasis.t());
+        var melSpec = matmul(magnitude.transpose(2, -1), melBasis.t());
         return melSpec.transpose(-1, 2);
     }
 
-    // TODO: Testing
-    private static Tensor CreateMelFilterbankTensor(
-        int nMels,
-        int nFft,
-        int sampleRate,
-        float fMin,
-        float fMax)
-    {
-        // Convert Hz to mel scale
-        float HzToMel(float hz) =>
-            2595 * (float)Math.Log10(1 + hz / 700.0f);
-
-        float MelToHz(float mel) =>
-            700 * ((float)Math.Pow(10, mel / 2595.0f) - 1);
-
-        var minMel = HzToMel(fMin);
-        var maxMel = HzToMel(fMax);
-
-        // Create equally spaced points in mel scale
-        var melPoints = torch.linspace(minMel, maxMel, nMels + 2);
-        var hzPoints = torch.tensor(melPoints.data<float>().Select(mel => MelToHz(mel)).ToArray());
-
-        // Convert to FFT bins
-        var bins = (nFft - 1) * hzPoints / sampleRate;
-
-        // Create filterbank matrix
-        var fbank = torch.zeros(new long[] { nMels, nFft });
-
-        for (int i = 0; i < nMels; i++)
-        {
-            var left = bins[i];
-            var center = bins[i + 1];
-            var right = bins[i + 2];
-
-            for (int j = 0; j < nFft; j++)
-            {
-                float weight = 0;
-
-                if (j > left.item<float>() && j < right.item<float>())
-                {
-                    if (j <= center.item<float>())
-                        weight = (j - left.item<float>()) / (center.item<float>() - left.item<float>());
-                    else
-                        weight = (right.item<float>() - j) / (right.item<float>() - center.item<float>());
-                }
-
-                fbank[i, j] = weight;
-            }
-        }
-
-        return fbank;
-    }
-
     public Tensor MFCC(
-        int nMfcc = 40,
-        int nMels = 80,
-        float logOffset = 1e-6f,
-        Dictionary<string, object> kwargs = null)
+            int nMfcc = 40,
+            int nMels = 80,
+            float logOffset = 1e-6f,
+            Dictionary<string, object> kwargs = null)
     {
         var melSpectrogram = MelSpectrogram(nMels, 0.0f, null, kwargs);
-        melSpectrogram = torch.log(melSpectrogram + logOffset);
+        melSpectrogram = log(melSpectrogram + logOffset);
 
         // Create DCT matrix
-        var dctMatrix = GetDCTMatrix(nMfcc, nMels);
-        var mfcc = torch.matmul(melSpectrogram.transpose(-1, -2), dctMatrix);
+        var dctMatrix = DCTMatrix(nMfcc, nMels);
+        var mfcc = matmul(melSpectrogram.transpose(-1, -2), dctMatrix);
         return mfcc.transpose(-1, -2);
     }
 
@@ -982,10 +929,10 @@ public class AudioSignal : IDisposable
     /// <param name="targetDb">Target loudness in dB</param>
     public AudioSignal Normalize(float targetDb = -24.0f)
     {
-        var db = torch.tensor(targetDb).to(Device);
+        var db = tensor(targetDb).to(Device);
         var refDb = Loudness();
         var gain = db - refDb;
-        gain = torch.exp(gain * LoudnessMeter.GAIN_FACTOR);
+        gain = exp(gain * LoudnessMeter.GAIN_FACTOR);
 
         AudioData *= gain.unsqueeze(-1).unsqueeze(-1);
         return this;
@@ -998,41 +945,15 @@ public class AudioSignal : IDisposable
     public void Resample(int sampleRate)
     {
         if (sampleRate == SampleRate)
+        {
             return;
-
-        float ratio = (float)sampleRate / SampleRate;
-        int outputLength = (int)(SignalLength * ratio);
-
-        var resampled = new List<Tensor>();
-        for (int i = 0; i < BatchSize; i++)
-        {
-            for (int j = 0; j < NumChannels; j++)
-            {
-                var channel = AudioData[i, j];
-                var resampledChannel = torch.nn.functional.interpolate(
-                    channel.unsqueeze(0).unsqueeze(0),
-                    size: new long[] { outputLength },
-                    mode: InterpolationMode.Linear,
-                    align_corners: true);
-                resampled.Add(resampledChannel.squeeze());
-            }
         }
 
-        AudioData = torch.stack(resampled)
-            .reshape(BatchSize, NumChannels, outputLength);
+        AudioData = DSP.ResampleLinear(
+            _audioData,
+            SampleRate,
+            sampleRate);
         SampleRate = sampleRate;
-    }
-
-    // Compute gcd for the resampling ratio
-    private static long Gcd(long a, long b)
-    {
-        while (b != 0)
-        {
-            var temp = b;
-            b = a % b;
-            a = temp;
-        }
-        return a;
     }
 
     /// <summary>
@@ -1042,9 +963,11 @@ public class AudioSignal : IDisposable
     public void ResampleFrac(int targetSampleRate)
     {
         if (targetSampleRate == SampleRate)
+        {
             return;
+        }
 
-        long greatestCommonDivisor = Gcd(SampleRate, targetSampleRate);
+        long greatestCommonDivisor = MathUtils.GCD(SampleRate, targetSampleRate);
         int upsampleFactor = targetSampleRate / (int)greatestCommonDivisor;
         int downsampleFactor = SampleRate / (int)greatestCommonDivisor;
 
@@ -1055,17 +978,17 @@ public class AudioSignal : IDisposable
             // Insert zeros
             var signalShape = audioSignal.shape;
             signalShape[^1] *= upsampleFactor;
-            var upsampledSignal = torch.zeros(signalShape, device: audioSignal.device, dtype: audioSignal.dtype);
+            var upsampledSignal = zeros(signalShape, device: audioSignal.device, dtype: audioSignal.dtype);
             upsampledSignal.index_copy_(-1,
-                torch.arange(0, upsampledSignal.size(-1), upsampleFactor, device: audioSignal.device),
+                arange(0, upsampledSignal.size(-1), upsampleFactor, device: audioSignal.device),
                 audioSignal);
 
             // Apply Low Pass Filter
             var filterCutoff = 1.0f / upsampleFactor;
             var filterHalfWidth = 64;
-            var timeAxis = torch.arange(-filterHalfWidth, filterHalfWidth + 1, device: audioSignal.device);
-            var filterKernel = torch.sinc(filterCutoff * timeAxis) * filterCutoff * upsampleFactor;
-            filterKernel *= torch.hamming_window(2 * filterHalfWidth + 1, device: audioSignal.device);
+            var timeAxis = arange(-filterHalfWidth, filterHalfWidth + 1, device: audioSignal.device);
+            var filterKernel = sinc(filterCutoff * timeAxis) * filterCutoff * upsampleFactor;
+            filterKernel *= hamming_window((2 * filterHalfWidth) + 1, device: audioSignal.device);
 
             // Normalize filter
             filterKernel /= filterKernel.sum();
@@ -1073,11 +996,11 @@ public class AudioSignal : IDisposable
             // Reshape for batch convolution
             filterKernel = filterKernel.reshape(1, 1, -1);
             var paddingSize = filterKernel.size(-1) - 1;
-            upsampledSignal = torch.nn.functional.pad(upsampledSignal, [paddingSize, paddingSize],
+            upsampledSignal = nn.functional.pad(upsampledSignal, [paddingSize, paddingSize],
                 mode: PaddingModes.Reflect);
 
             // Apply filter
-            audioSignal = torch.nn.functional.conv1d(upsampledSignal, filterKernel);
+            audioSignal = nn.functional.conv1d(upsampledSignal, filterKernel);
         }
 
         // Downsample
@@ -1086,22 +1009,22 @@ public class AudioSignal : IDisposable
             // Apply Low Pass Filter first
             var filterCutoff = 1.0f / downsampleFactor;
             var filterHalfWidth = 64;
-            var timeAxis = torch.arange(-filterHalfWidth, filterHalfWidth + 1, device: audioSignal.device);
-            var filterKernel = torch.sinc(filterCutoff * timeAxis) * filterCutoff;
-            filterKernel *= torch.hamming_window(2 * filterHalfWidth + 1, device: audioSignal.device);
+            var timeAxis = arange(-filterHalfWidth, filterHalfWidth + 1, device: audioSignal.device);
+            var filterKernel = sinc(filterCutoff * timeAxis) * filterCutoff;
+            filterKernel *= hamming_window((2 * filterHalfWidth) + 1, device: audioSignal.device);
             filterKernel /= filterKernel.sum();
 
             filterKernel = filterKernel.reshape(1, 1, -1);
             var paddingSize = filterKernel.size(-1) - 1;
-            audioSignal = torch.nn.functional.pad(audioSignal, [paddingSize, paddingSize],
+            audioSignal = nn.functional.pad(audioSignal, [paddingSize, paddingSize],
                 mode: PaddingModes.Reflect);
-            audioSignal = torch.nn.functional.conv1d(audioSignal, filterKernel);
+            audioSignal = nn.functional.conv1d(audioSignal, filterKernel);
 
             // Downsample by taking every downsampleFactor'th sample
             audioSignal = audioSignal.index(
                 TensorIndex.Slice(),
                 TensorIndex.Slice(),
-                torch.arange(0, audioSignal.size(-1), downsampleFactor, device: audioSignal.device)
+                arange(0, audioSignal.size(-1), downsampleFactor, device: audioSignal.device)
             );
         }
 
@@ -1124,7 +1047,7 @@ public class AudioSignal : IDisposable
     /// <param name="matchStride">Whether to adjust padding to match stride</param>
     /// <param name="paddingType">Type of padding to apply</param>
     /// <returns>Complex STFT tensor</returns>
-    public Tensor Stft(
+    public Tensor STFT(
         int? windowLength = null,
         int? hopLength = null,
         string windowType = null,
@@ -1144,7 +1067,7 @@ public class AudioSignal : IDisposable
         var (rightPad, pad) = ComputeStftPadding(windowLength.Value, hopLength.Value, matchStride.Value);
 
         // Apply padding
-        audioData = torch.nn.functional.pad(
+        audioData = nn.functional.pad(
             audioData,
             new long[] { pad, pad + rightPad },
             mode: paddingType!.Value); // TODO: padding mode conversion
@@ -1153,7 +1076,7 @@ public class AudioSignal : IDisposable
         var flatAudio = audioData.reshape(-1, audioData.size(-1));
 
         // Perform STFT
-        var stftData = torch.stft(
+        var stftData = stft(
             flatAudio,
             n_fft: windowLength.Value,
             hop_length: hopLength.Value,
@@ -1191,13 +1114,17 @@ public class AudioSignal : IDisposable
     /// <summary>
     /// Converts stereo audio to mono by averaging channels
     /// </summary>
+    /// <remarks>
+    /// Note: AudioSignal does not currently handle interleaving.
+    /// </remarks>
     public void ToMono()
     {
         if (NumChannels == 1)
+        {
             return;
-        _audioData = _audioData.mean([1], keepdim: true);
+        }
+        _audioData = DSP.ConvertToMono(_audioData);
     }
-
     public override string ToString()
     {
         var info = new Dictionary<string, object>
@@ -1223,9 +1150,13 @@ public class AudioSignal : IDisposable
     public void Trim(int before, int after)
     {
         if (after == 0)
+        {
             _audioData = _audioData[.., before..];
+        }
         else
+        {
             _audioData = _audioData[.., before..^after];
+        }
     }
 
     public void TruncateSamples(int lengthInSamples)
@@ -1236,71 +1167,143 @@ public class AudioSignal : IDisposable
     // Additional utility methods
     public void ZeroPad(int before, int after)
     {
-        _audioData = torch.nn.functional.pad(_audioData, (before, after));
+        _audioData = nn.functional.pad(_audioData, (before, after));
     }
 
     public void ZeroPadTo(int length, string mode = "after")
     {
         if (mode == "before")
+        {
             ZeroPad(Math.Max(length - SignalLength, 0), 0);
+        }
         else
+        {
             ZeroPad(0, Math.Max(length - SignalLength, 0));
+        }
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _audioData?.Dispose();
+            }
+
+            _stftData?.Dispose();
+            _loudness?.Dispose();
+        }
+        _disposed = true;
     }
 
     private static AudioInfo GetAudioInfo(string audioPath)
     {
-        using (var reader = new AudioFileReader(audioPath))
+        using var reader = new AudioFileReader(audioPath);
+        return new AudioInfo
         {
-            return new AudioInfo
-            {
-                Duration = (float)reader.TotalTime.TotalSeconds,
-                NumFrames = (int)(reader.Length / (reader.WaveFormat.BitsPerSample / 8)),
-                SampleRate = reader.WaveFormat.SampleRate
-            };
-        }
+            Duration = (float)reader.TotalTime.TotalSeconds,
+            NumFrames = (int)(reader.Length / (reader.WaveFormat.BitsPerSample / 8)),
+            SampleRate = reader.WaveFormat.SampleRate
+        };
     }
 
-    // Helper methods
+    private static Tensor MelFilterbank(
+            int nMels,
+        int nFft,
+        int sampleRate,
+        float fMin,
+        float fMax)
+    {
+        // Convert Hz to mel scale
+        float HzToMel(float hz) =>
+            2595 * (float)Math.Log10(1 + (hz / 700.0f));
+
+        float MelToHz(float mel) =>
+            700 * ((float)Math.Pow(10, mel / 2595.0f) - 1);
+
+        var minMel = HzToMel(fMin);
+        var maxMel = HzToMel(fMax);
+
+        // Create equally spaced points in mel scale
+        var melPoints = linspace(minMel, maxMel, nMels + 2);
+        var hzPoints = tensor(melPoints.data<float>().Select(mel => MelToHz(mel)).ToArray());
+
+        // Convert to FFT bins
+        var bins = (nFft - 1) * hzPoints / sampleRate;
+
+        // Create filterbank matrix
+        var fbank = zeros(new long[] { nMels, nFft });
+
+        for (int i = 0; i < nMels; i++)
+        {
+            var left = bins[i];
+            var center = bins[i + 1];
+            var right = bins[i + 2];
+
+            for (int j = 0; j < nFft; j++)
+            {
+                float weight = 0;
+
+                if (j > left.item<float>() && j < right.item<float>())
+                {
+                    if (j <= center.item<float>())
+                    {
+                        weight = (j - left.item<float>()) / (center.item<float>() - left.item<float>());
+                    }
+                    else
+                    {
+                        weight = (right.item<float>() - j) / (right.item<float>() - center.item<float>());
+                    }
+                }
+
+                fbank[i, j] = weight;
+            }
+        }
+
+        return fbank;
+    }
+
     private static int NextPowerOfTwo(int x)
     {
         return (int)Math.Pow(2, Math.Ceiling(Math.Log2(x)));
     }
 
-    private Tensor GetDCTMatrix(int numMfcc, int numMels)
+    private Tensor DCTMatrix(int numMfcc, int numMels)
     {
         var cacheKey = (numMfcc, numMels);
         if (!_dctMatrixCache.ContainsKey(cacheKey))
         {
-            var melIndices = torch.arange(numMels, device: Device);
-            var mfccIndices = torch.arange(numMfcc, device: Device).unsqueeze(-1);
-            var dctMatrix = torch.cos((mfccIndices * (2 * melIndices + 1) * Math.PI) / (2 * numMels));
+            var melIndices = arange(numMels, device: Device);
+            var mfccIndices = arange(numMfcc, device: Device).unsqueeze(-1);
+            var dctMatrix = cos(mfccIndices * ((2 * melIndices) + 1) * Math.PI / (2 * numMels));
 
             // Normalization
-            dctMatrix *= torch.sqrt(2.0f / numMels);
-            dctMatrix.select(0, 0).mul_(1.0f / torch.sqrt(2.0f));
+            dctMatrix *= sqrt(2.0f / numMels);
+            dctMatrix.select(0, 0).mul_(1.0f / sqrt(2.0f));
 
             _dctMatrixCache[cacheKey] = dctMatrix;
         }
         return _dctMatrixCache[cacheKey];
     }
 
-    private float[,] GetMelFilterbank(int sampleRate, int nfftSize, int numMels, float freqMin, float freqMax)
+    private float[,] MelFilterbankArray(int sampleRate, int nfftSize, int numMels, float freqMin, float freqMax)
     {
         var cacheKey = (sampleRate, nfftSize, numMels, freqMin, freqMax);
-        if (!_melFilterbankCache.ContainsKey(cacheKey))
+        if (!_melFilterbankCache.TryGetValue(cacheKey, out float[,]? cachedValue))
         {
             // Create mel filterbank using librosa-style triangular filters
-            float[] fftFrequencies = Enumerable.Range(0, nfftSize / 2 + 1)
+            float[] fftFrequencies = Enumerable.Range(0, (nfftSize / 2) + 1)
                 .Select(i => i * sampleRate / (float)nfftSize)
                 .ToArray();
 
             // Convert Hz to mel
-            float melMinimum = 1127 * (float)Math.Log(1 + freqMin / 700);
-            float melMaximum = 1127 * (float)Math.Log(1 + freqMax / 700);
+            float melMinimum = 1127 * (float)Math.Log(1 + (freqMin / 700));
+            float melMaximum = 1127 * (float)Math.Log(1 + (freqMax / 700));
 
             // Create mel points evenly spaced in mel scale
             float[] melPoints = Enumerable.Range(0, numMels + 2)
-                .Select(i => melMinimum + i * (melMaximum - melMinimum) / (numMels + 1))
+                .Select(i => melMinimum + (i * (melMaximum - melMinimum) / (numMels + 1)))
                 .ToArray();
 
             // Convert mel points back to Hz
@@ -1308,7 +1311,7 @@ public class AudioSignal : IDisposable
                 .Select(melPoint => 700 * ((float)Math.Exp(melPoint / 1127) - 1))
                 .ToArray();
 
-            var filterbank = new float[numMels, nfftSize / 2 + 1];
+            var filterbank = new float[numMels, (nfftSize / 2) + 1];
 
             for (int melBand = 0; melBand < numMels; melBand++)
             {
@@ -1333,10 +1336,11 @@ public class AudioSignal : IDisposable
                 }
             }
 
-            _melFilterbankCache[cacheKey] = filterbank;
+            cachedValue = filterbank;
+            _melFilterbankCache[cacheKey] = cachedValue;
         }
 
-        return _melFilterbankCache[cacheKey];
+        return cachedValue;
     }
 
     #endregion Methods

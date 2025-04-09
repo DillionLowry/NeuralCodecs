@@ -7,23 +7,26 @@ namespace NeuralCodecs.Torch.AudioTools;
 /// <summary>
 /// Utility functions for audio processing.
 /// </summary>
-public static class AudioUtils
+public static partial class Utils
 {
     public static readonly string[] AudioExtensions = [".wav", ".flac", ".mp3", ".mp4"];
 
-    /// <summary>
-    /// Gets information about an audio file.
-    /// </summary>
-    /// <param name="audioPath">Path to the audio file.</param>
-    /// <returns>AudioInfo containing file metadata.</returns>
-    public static AudioInfo GetAudioInfo(string audioPath)
+    public static IDisposable ChangeDirScope(string newDir)
     {
-        using var reader = new AudioFileReader(audioPath);
-        return new AudioInfo
-        {
-            SampleRate = reader.WaveFormat.SampleRate,
-            NumFrames = (int)(reader.Length / (reader.WaveFormat.BitsPerSample / 8) / reader.WaveFormat.Channels)
-        };
+        return new ChangeDirectoryScope(newDir);
+    }
+
+    public static (T item, int sourceIndex, int itemIndex) ChooseFromListOfLists<T>(
+            Random state,
+            List<List<T>> listOfLists,
+            float[] p = null)
+    {
+        var sourceIdx = p == null ?
+            state.Next(listOfLists.Count) :
+            RandomChoice(state, Enumerable.Range(0, listOfLists.Count).ToArray(), p);
+
+        var itemIdx = state.Next(listOfLists[sourceIdx].Count);
+        return (listOfLists[sourceIdx][itemIdx], sourceIdx, itemIdx);
     }
 
     public static Tensor EnsureTensor(object x, int? ndim = null, int? batchSize = null)
@@ -73,67 +76,6 @@ public static class AudioUtils
         return tensor;
     }
 
-    public static Tensor HzToBin(Tensor hz, int nFft, int sampleRate)
-    {
-        var shape = hz.shape;
-        hz = hz.flatten();
-        var freqs = torch.linspace(0, sampleRate / 2f, 2 + nFft / 2);
-
-        // Clamp frequencies to Nyquist
-        hz = torch.clamp(hz, 0, sampleRate / 2f);
-
-        var closest = (hz.unsqueeze(0) - freqs.unsqueeze(1)).abs();
-        var closestBins = closest.min(dim: 0).indexes;
-
-        return closestBins.reshape(shape);
-    }
-
-    public static Random GetRandomState(object seed)
-    {
-        if (seed == null)
-        {
-            return new Random();
-        }
-        else if (seed is int intSeed)
-        {
-            return new Random(intSeed);
-        }
-        else if (seed is Random rng)
-        {
-            return rng;
-        }
-        else
-        {
-            throw new ArgumentException($"Cannot use {seed} to seed Random");
-        }
-    }
-
-    public static void SetSeed(int randomSeed, bool setCudnn = false)
-    {
-        torch.manual_seed(randomSeed);
-    }
-
-    public static IDisposable ChangeDirScope(string newDir)
-    {
-        return new ChangeDirectoryScope(newDir);
-    }
-
-    private class ChangeDirectoryScope : IDisposable
-    {
-        private readonly string _originalDir;
-
-        public ChangeDirectoryScope(string newDir)
-        {
-            _originalDir = Directory.GetCurrentDirectory();
-            Directory.SetCurrentDirectory(newDir);
-        }
-
-        public void Dispose()
-        {
-            Directory.SetCurrentDirectory(_originalDir);
-        }
-    }
-
     public static IEnumerable<string> FindAudioFiles(string folder, IEnumerable<string> extensions = null)
     {
         extensions ??= AudioExtensions;
@@ -157,36 +99,54 @@ public static class AudioUtils
             Directory.EnumerateFiles(path, $"*{ext}", SearchOption.AllDirectories));
     }
 
-    public static (T item, int sourceIndex, int itemIndex) ChooseFromListOfLists<T>(
-        Random state,
-        List<List<T>> listOfLists,
-        float[] p = null)
+    /// <summary>
+    /// Gets information about an audio file.
+    /// </summary>
+    /// <param name="audioPath">Path to the audio file.</param>
+    /// <returns>AudioInfo containing file metadata.</returns>
+    public static AudioInfo GetAudioInfo(string audioPath)
     {
-        var sourceIdx = p == null ?
-            state.Next(listOfLists.Count) :
-            RandomChoice(state, Enumerable.Range(0, listOfLists.Count).ToArray(), p);
-
-        var itemIdx = state.Next(listOfLists[sourceIdx].Count);
-        return (listOfLists[sourceIdx][itemIdx], sourceIdx, itemIdx);
+        using var reader = new AudioFileReader(audioPath);
+        return new AudioInfo
+        {
+            SampleRate = reader.WaveFormat.SampleRate,
+            NumFrames = (int)(reader.Length / (reader.WaveFormat.BitsPerSample / 8) / reader.WaveFormat.Channels)
+        };
     }
 
-    private static int RandomChoice(Random rng, int[] items, float[] probabilities)
+    public static Random GetRandomState(object seed)
     {
-        var cumsum = new float[probabilities.Length];
-        cumsum[0] = probabilities[0];
-        for (int i = 1; i < probabilities.Length; i++)
+        if (seed == null)
         {
-            cumsum[i] = cumsum[i - 1] + probabilities[i];
+            return new Random();
         }
-
-        var value = (float)rng.NextDouble() * cumsum[^1];
-        var index = Array.BinarySearch(cumsum, value);
-
-        if (index < 0)
+        else if (seed is int intSeed)
         {
-            index = ~index;
+            return new Random(intSeed);
         }
-        return items[index];
+        else if (seed is Random rng)
+        {
+            return rng;
+        }
+        else
+        {
+            throw new ArgumentException($"Cannot use {seed} to seed Random");
+        }
+    }
+
+    public static Tensor HzToBin(Tensor hz, int nFft, int sampleRate)
+    {
+        var shape = hz.shape;
+        hz = hz.flatten();
+        var freqs = linspace(0, sampleRate / 2f, 2 + (nFft / 2));
+
+        // Clamp frequencies to Nyquist
+        hz = clamp(hz, 0, sampleRate / 2f);
+
+        var closest = (hz.unsqueeze(0) - freqs.unsqueeze(1)).abs();
+        var closestBins = closest.min(dim: 0).indexes;
+
+        return closestBins.reshape(shape);
     }
 
     public static object PrepareBatch(object batch, Device device)
@@ -224,8 +184,8 @@ public static class AudioUtils
             "uniform" => distTuple.args switch
             {
                 var args when typeof(T) == typeof(float) || typeof(T) == typeof(double) =>
-                                (T)(object)(float)(state.NextDouble() *
-                                    ((float)args[1] - (float)args[0]) + (float)args[0]),
+                                (T)(object)(float)((state.NextDouble() *
+                                    ((float)args[1] - (float)args[0])) + (float)args[0]),
 
                 var args when typeof(T) == typeof(int) =>
                     (T)(object)state.Next((int)args[0], (int)args[1]),
@@ -236,8 +196,8 @@ public static class AudioUtils
             "normal" => distTuple.args switch
             {
                 var args when typeof(T) == typeof(float) || typeof(T) == typeof(double) =>
-                    (T)(object)(float)(SampleNormal(state) *
-                        (float)args[1] + (float)args[0]),
+                    (T)(object)(float)((SampleNormal(state) *
+                        (float)args[1]) + (float)args[0]),
 
                 _ => throw new ArgumentException($"Unsupported type {typeof(T)} for normal distribution")
             },
@@ -246,10 +206,50 @@ public static class AudioUtils
         };
     }
 
+    public static void SetSeed(int randomSeed, bool setCudnn = false)
+    {
+        manual_seed(randomSeed);
+    }
+
+    private static int RandomChoice(Random rng, int[] items, float[] probabilities)
+    {
+        var cumsum = new float[probabilities.Length];
+        cumsum[0] = probabilities[0];
+        for (int i = 1; i < probabilities.Length; i++)
+        {
+            cumsum[i] = cumsum[i - 1] + probabilities[i];
+        }
+
+        var value = (float)rng.NextDouble() * cumsum[^1];
+        var index = Array.BinarySearch(cumsum, value);
+
+        if (index < 0)
+        {
+            index = ~index;
+        }
+        return items[index];
+    }
+
     private static double SampleNormal(Random rng)
     {
         double u1 = 1.0 - rng.NextDouble();
         double u2 = 1.0 - rng.NextDouble();
         return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+    }
+
+    private class ChangeDirectoryScope : IDisposable
+    {
+        private readonly string _originalDir;
+
+        public ChangeDirectoryScope(string newDir)
+        {
+            _originalDir = Directory.GetCurrentDirectory();
+            Directory.SetCurrentDirectory(newDir);
+        }
+
+        public void Dispose()
+        {
+            Directory.SetCurrentDirectory(_originalDir);
+        }
     }
 }

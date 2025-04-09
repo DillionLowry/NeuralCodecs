@@ -5,9 +5,7 @@ namespace NeuralCodecs.Torch.AudioTools;
 /// </summary>
 public class AudioInfo
 {
-    public float SampleRate { get; set; }
-
+    public float Duration { get; set; }
     public int NumFrames { get; set; }
-
-    public float Duration { get; set; } //= NumFrames / SampleRate;
+    public float SampleRate { get; set; }
 }

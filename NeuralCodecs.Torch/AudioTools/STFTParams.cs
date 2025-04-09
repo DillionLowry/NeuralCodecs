@@ -3,25 +3,54 @@ using TorchSharp;
 namespace NeuralCodecs.Torch.AudioTools;
 
 /// <summary>
-/// Parameters for Short-Time Fourier Transform (STFT) operations.
+/// Parameters for short-time Fourier transform operations.
 /// </summary>
-public class STFTParams
+public record STFTParams
 {
     /// <summary>
-    /// Gets or sets the window length in samples.
+    /// Creates a new instance of StftParams with specified parameters.
     /// </summary>
-    public int WindowLength { get; set; }
+    /// <param name="windowLength">Length of the window in samples. If null, defaults to 2048.</param>
+    /// <param name="hopLength">Hop length in samples. If null, defaults to windowLength/4.</param>
+    /// <param name="windowType">Type of window to use. If null, defaults to "hann".</param>
+    /// <param name="center">Whether to pad the signal. If null, defaults to true.</param>
+    /// <param name="matchStride">Whether to match stride to hop length.</param>
+    /// <param name="paddingMode">Padding mode to use. If null, defaults to "reflect".</param>
+    public STFTParams(
+        int? windowLength = null,
+        int? hopLength = null,
+        string? windowType = null,
+        bool? center = null,
+        bool? matchStride = null,
+        PaddingModes? paddingMode = null)
+    {
+        WindowLength = windowLength ?? 2048;
+        HopLength = hopLength ?? WindowLength / 4;
+        WindowType = windowType ?? "hann";
+        Center = center ?? true;
+        MatchStride = matchStride ?? false;
+        PaddingMode = paddingMode ?? PaddingModes.Reflect;
+    }
 
     /// <summary>
-    /// Gets or sets the hop length in samples.
+    /// Length of the window in samples.
     /// </summary>
-    public int HopLength { get; set; }
+    public int WindowLength { get; init; }
 
-    // TODO: Add WindowType enum
     /// <summary>
-    /// Gets or sets the window type (e.g., hann, hamming).
+    /// Hop length in samples.
     /// </summary>
-    public string WindowType { get; set; }
+    public int HopLength { get; init; }
+
+    /// <summary>
+    /// Type of window to use. Options: "hann", "hamming", "blackman", "bartlett", "ones", "sqrt_hann".
+    /// </summary>
+    public string WindowType { get; init; }
+
+    /// <summary>
+    /// Whether to pad the signal.
+    /// </summary>
+    public bool Center { get; init; }
 
     /// <summary>
     /// Gets or sets whether to match the stride to the hop length.
@@ -29,29 +58,7 @@ public class STFTParams
     public bool MatchStride { get; set; }
 
     /// <summary>
-    /// Gets or sets the padding type for STFT.
+    /// Padding mode to use.
     /// </summary>
-    public PaddingModes PaddingMode { get; set; }
-
-    /// <summary>
-    /// Initializes a new instance of the STFTParams class.
-    /// </summary>
-    /// <param name="windowLength">Window length in samples.</param>
-    /// <param name="hopLength">Hop length in samples.</param>
-    /// <param name="windowType">Type of window function.</param>
-    /// <param name="matchStride">Whether to match stride to hop length.</param>
-    /// <param name="paddingType">Type of padding to apply.</param>
-    public STFTParams(
-        int? windowLength = null,
-        int? hopLength = null,
-        string windowType = null,
-        bool? matchStride = null,
-        PaddingModes? paddingType = null)
-    {
-        WindowLength = windowLength ?? 0;
-        HopLength = hopLength ?? 0;
-        WindowType = windowType;
-        MatchStride = matchStride ?? false;
-        PaddingMode = paddingType ?? PaddingModes.Reflect;
-    }
+    public PaddingModes PaddingMode { get; init; }
 }

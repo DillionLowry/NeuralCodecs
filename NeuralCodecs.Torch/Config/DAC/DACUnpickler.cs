@@ -211,7 +211,6 @@ namespace NeuralCodecs.Torch.Config.DAC
 
             // Convert weights using dynamic converter
             var normalizedDict = StateDictNameConverter.ConvertStateDict(stateDict, fromSafetensor: true);
-
             return new DACWeights(normalizedDict);
         }
 
@@ -273,7 +272,7 @@ namespace NeuralCodecs.Torch.Config.DAC
 
             return new DACConfig
             {
-                SamplingRate = GetMetadataValue<int>(weights.Metadata, "sampling_rate", 44100),
+                SampleRate = GetMetadataValue<int>(weights.Metadata, "sampling_rate", 44100),
                 EncoderDim = GetMetadataValue<int>(weights.Metadata, "encoder_dim", 64),
                 LatentDim = GetMetadataValue<int?>(weights.Metadata, "latent_dim"),
                 EncoderRates = GetMetadataValue<int[]>(weights.Metadata, "encoder_rates", [2, 4, 8, 8]),

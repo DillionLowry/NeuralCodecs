@@ -4,22 +4,11 @@ namespace NeuralCodecs.Torch.AudioTools;
 
 /// <summary>
 /// Extension methods for AudioSignal DSP operations.
+/// Based on Descript's audiotools python library.
 /// </summary>
 public static class AudioSignalExtensions
 {
-    private static readonly DSPOperations dsp = new DSPOperations();
-
-    /// <summary>
-    /// Generates overlapping windows from the audio signal.
-    /// </summary>
-    public static IEnumerable<AudioSignal> Windows(
-        this AudioSignal signal,
-        float windowDuration,
-        float hopDuration,
-        bool preprocess = true)
-    {
-        return dsp.Windows(signal, windowDuration, hopDuration, preprocess);
-    }
+    private static readonly DSP dsp = new DSP();
 
     /// <summary>
     /// Collects overlapping windows into a single tensor.
@@ -34,13 +23,14 @@ public static class AudioSignalExtensions
     }
 
     /// <summary>
-    /// Overlaps and adds the audio signal.
+    /// Applies a high-pass filter to the audio signal.
     /// </summary>
-    public static AudioSignal OverlapAndAdd(
+    public static AudioSignal HighPass(
         this AudioSignal signal,
-        float hopDuration)
+        Tensor cutoffs,
+        int zeros = 51)
     {
-        return dsp.OverlapAndAdd(signal, hopDuration);
+        return dsp.HighPass(signal, cutoffs, zeros);
     }
 
     /// <summary>
@@ -52,17 +42,6 @@ public static class AudioSignalExtensions
         int zeros = 51)
     {
         return dsp.LowPass(signal, cutoffs, zeros);
-    }
-
-    /// <summary>
-    /// Applies a high-pass filter to the audio signal.
-    /// </summary>
-    public static AudioSignal HighPass(
-        this AudioSignal signal,
-        Tensor cutoffs,
-        int zeros = 51)
-    {
-        return dsp.HighPass(signal, cutoffs, zeros);
     }
 
     /// <summary>
@@ -90,6 +69,16 @@ public static class AudioSignalExtensions
     }
 
     /// <summary>
+    /// Overlaps and adds the audio signal.
+    /// </summary>
+    public static AudioSignal OverlapAndAdd(
+        this AudioSignal signal,
+        float hopDuration)
+    {
+        return dsp.OverlapAndAdd(signal, hopDuration);
+    }
+
+    /// <summary>
     /// Applies preemphasis to the audio signal.
     /// </summary>
     public static AudioSignal Preemphasis(
@@ -97,5 +86,17 @@ public static class AudioSignalExtensions
         float coef = 0.85f)
     {
         return dsp.Preemphasis(signal, coef);
+    }
+
+    /// <summary>
+    /// Generates overlapping windows from the audio signal.
+    /// </summary>
+    public static IEnumerable<AudioSignal> Windows(
+        this AudioSignal signal,
+        float windowDuration,
+        float hopDuration,
+        bool preprocess = true)
+    {
+        return dsp.Windows(signal, windowDuration, hopDuration, preprocess);
     }
 }

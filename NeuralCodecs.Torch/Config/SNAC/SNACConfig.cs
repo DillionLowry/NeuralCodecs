@@ -38,7 +38,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the audio sampling rate in Hz.
     /// </summary>
     [JsonPropertyName("sampling_rate")]
-    public int SamplingRate { get; set; } = 44100;
+    public int SampleRate { get; set; } = 44100;
 
     /// <summary>
     /// Gets or sets the dimensionality of the encoder's hidden layers.
@@ -74,7 +74,7 @@ public class SNACConfig() : IModelConfig
     /// Gets or sets the attention window size. Null disables attention.
     /// </summary>
     [JsonPropertyName("attn_window_size")]
-    public int? AttnWindowSize { get; set; } = null;
+    public int? AttnWindowSize { get; set; } = 32;
 
     /// <summary>
     /// Gets or sets the size of the vector quantization codebook.
@@ -118,7 +118,7 @@ public class SNACConfig() : IModelConfig
     [JsonIgnore]
     public static SNACConfig SNAC32kHz => new()
     {
-        SamplingRate = 32000,
+        SampleRate = 32000,
         EncoderDim = 64,
         EncoderRates = [2, 3, 8, 8],
         LatentDim = null,
@@ -138,7 +138,7 @@ public class SNACConfig() : IModelConfig
     [JsonIgnore]
     public static SNACConfig SNAC24kHz => new()
     {
-        SamplingRate = 24000,
+        SampleRate = 24000,
         EncoderDim = 48,
         EncoderRates = [2, 4, 8, 8],
         LatentDim = null,

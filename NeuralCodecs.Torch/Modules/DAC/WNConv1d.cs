@@ -65,7 +65,7 @@ public class WNConv1d : Module<Tensor, Tensor>
 
         if (useBias)
         {
-            bias = new Parameter(empty(outChannels, dtype: float32));
+            bias = Parameter(empty(outChannels, dtype: float32));
         }
         RegisterComponents();
         ResetParameters(useBias);
