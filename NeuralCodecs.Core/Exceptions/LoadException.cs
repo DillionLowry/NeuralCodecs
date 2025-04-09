@@ -3,23 +3,63 @@ namespace NeuralCodecs.Core.Exceptions
     /// <summary>
     /// Exception thrown when model loading fails.
     /// </summary>
-    public class LoadException : Exception
+    public class LoadException : NeuralCodecException
     {
         /// <summary>
-        /// Initializes a new instance of the <see cref="LoadException"/> class with a specified error message.
+        /// Gets the model ID
         /// </summary>
-        /// <param name="message">The message that describes the error.</param>
-        public LoadException(string message) : base(message)
+        public string? ModelId { get; }
+
+        /// <summary>
+        /// Gets the path to the model
+        /// </summary>
+        public string? ModelPath { get; }
+
+        /// <summary>
+        /// Gets the model revision
+        /// </summary>
+        public string? Revision { get; }
+
+        /// <summary>
+        /// Creates a new load exception
+        /// </summary>
+        public LoadException(string message) : base(message) { }
+
+        /// <summary>
+        /// Creates a new load exception with a message and inner exception
+        /// </summary>
+        public LoadException(string message, Exception innerException)
+            : base(message, innerException) { }
+
+        /// <summary>
+        /// Creates a new load exception with context
+        /// </summary>
+        public LoadException(string message, string modelId,
+            string? modelPath = null, string? revision = null)
+            : base(message)
         {
+            ModelId = modelId;
+            ModelPath = modelPath;
+            Revision = revision;
+
+            if (modelId != null) WithDiagnostic("ModelId", modelId);
+            if (modelPath != null) WithDiagnostic("ModelPath", modelPath);
+            if (revision != null) WithDiagnostic("Revision", revision);
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LoadException"/> class with a specified error message and a reference to the inner exception.
+        /// Creates a new load exception with context and inner exception
         /// </summary>
-        /// <param name="message">The message that describes the error.</param>
-        /// <param name="inner">The exception that is the cause of the current exception.</param>
-        public LoadException(string message, Exception inner) : base(message, inner)
+        public LoadException(string message, Exception innerException,
+            string modelId, string? modelPath = null, string? revision = null)
+            : base(message, innerException)
         {
+            ModelId = modelId;
+            ModelPath = modelPath;
+            Revision = revision;
+            if (modelId != null) WithDiagnostic("ModelId", modelId);
+            if (modelPath != null) WithDiagnostic("ModelPath", modelPath);
+            if (revision != null) WithDiagnostic("Revision", revision);
         }
     }
 }

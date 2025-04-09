@@ -1,4 +1,4 @@
-﻿namespace NeuralCodecs.Torch.Utils;
+﻿namespace NeuralCodecs.Core.Utils;
 
 public static class MathUtils
 {
@@ -21,7 +21,25 @@ public static class MathUtils
         }
         return a;
     }
-
+    /// <summary>
+    /// Calculates Greatest Common Divisor (GCD) of two numbers.
+    /// </summary>
+    /// <param name="a">The first number</param>
+    /// <param name="b">The second number</param>
+    /// <returns>The greatest common divisor of the two numbers</returns>
+    public static long GCD(int a, int b)
+    {
+        if (a == 0 && b == 0) throw new ArgumentException("Both numbers cannot be 0");
+        a = Math.Abs(a);
+        b = Math.Abs(b);
+        while (b != 0)
+        {
+            int temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    }
     /// <summary>
     /// Calculates Least Common Multiple (LCM) of two numbers.
     /// </summary>
@@ -40,7 +58,7 @@ public static class MathUtils
     /// <returns>The linear scale value</returns>
     public static double DecibelToLinear(double db)
     {
-        return Math.Pow(10.0, db / 20.0);
+        return Math.Pow(10.0, (db / 20.0));
     }
 
     /// <summary>
@@ -90,8 +108,8 @@ public static class MathUtils
         x = Math.Abs(x);
 
         // A&S formula 7.1.26
-        double t = 1.0 / (1.0 + (p * x));
-        double y = 1.0 - (((((((((a5 * t) + a4) * t) + a3) * t) + a2) * t) + a1) * t * Math.Exp(-x * x));
+        double t = 1.0 / (1.0 + p * x);
+        double y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.Exp(-x * x);
 
         return sign * y;
     }

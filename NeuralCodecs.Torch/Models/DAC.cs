@@ -57,7 +57,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         _encoderRates = config.EncoderRates ?? [2, 4, 8, 8];
         _decoderDim = config.DecoderDim;
         _decoderRates = config.DecoderRates ?? [8, 8, 4, 2];
-        _sampleRate = config.SamplingRate;
+        _sampleRate = config.SampleRate;
 
         // Calculate latent dimension if not provided
         _latentDim = config.LatentDim ?? _encoderDim * (1 << _encoderRates.Length);
@@ -160,6 +160,18 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             commitmentLoss.MoveToOuterDisposeScope(),
             codebookLoss.MoveToOuterDisposeScope()
         );
+    }
+    public Tensor EncodeAudio(Tensor audioData)
+    {
+        using var scope = NewDisposeScope();
+
+        audioData = Preprocess(audioData, _sampleRate);
+        var z = encoder.forward(audioData);
+        var (zQ, _, _, _, _) =
+            quantizer.forward(z, null);
+
+        return zQ.MoveToOuterDisposeScope();
+        
     }
 
     /// <summary>
@@ -320,7 +332,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
 
         try
         {
-            switch (FileUtil.DetectFileType(path))
+            switch (FileUtils.DetectFileType(path))
             {
                 case ModelFileType.Checkpoint:
                     this.load_checkpoint(path);

@@ -79,7 +79,7 @@ public class LocalMHA : Module<Tensor, Tensor>
     {
         using var scope = NewDisposeScope();
 
-        var (_, _, timeSteps) = x.GetDimensions();
+        var (_, _, timeSteps) = x.GetBCTDimensions();
         var residual = x;
 
         // Layer norm expects [..., channels]

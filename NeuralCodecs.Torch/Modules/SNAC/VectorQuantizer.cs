@@ -147,7 +147,7 @@ public class VectorQuantizer : Module<Tensor, (Tensor output, Tensor indices)>
     /// <returns>
     /// Tensor of continuous vectors with shape (batch, codebook_dim, time)
     /// representing the corresponding codebook entries
-    /// </returns
+    /// </returns>
     public Tensor DecodeCode(Tensor indices)
     {
         using var scope = NewDisposeScope();

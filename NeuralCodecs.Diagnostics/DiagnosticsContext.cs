@@ -247,17 +247,19 @@ namespace NeuralCodecs.Diagnostics
             }
         }
 
-
+        // TODO
         public void LogModuleOutput(string moduleName, string label, Tensor output)
         {
             if (!_enabled || !ShouldTrackModule(moduleName)) return;
-            _tensorLogger?.LogTensor(moduleName, label, output);
+            //_tensorLogger?.LogTensor(moduleName, label, output);
+            _tensorLogger?.LogTensor(output, label);
         }
 
         public void LogModuleOutput(string moduleName, string label, IEnumerable<Tensor> outputs)
         {
-            if (!_enabled || !ShouldTrackModule(moduleName)) return;
-            _tensorLogger?.LogTensors(moduleName, label, outputs);
+            //if (!_enabled || !ShouldTrackModule(moduleName)) return;
+            //_tensorLogger?.LogTensors(moduleName, label, outputs);
+            throw new NotImplementedException();
         }
 
         public void GenerateComparisonScript(string path)

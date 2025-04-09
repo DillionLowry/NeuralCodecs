@@ -201,7 +201,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         try
         {
-            switch (FileUtil.DetectFileType(path))
+            switch (FileUtils.DetectFileType(path))
             {
                 case ModelFileType.PyTorch:
                 case ModelFileType.Weights:
@@ -239,9 +239,9 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         using var scope = torch.NewDisposeScope();
 
         // Resample if needed
-        if (sampleRate != _config.SamplingRate)
+        if (sampleRate != _config.SampleRate)
         {
-            audioData = ResampleAudio(audioData, sampleRate, _config.SamplingRate);
+            audioData = ResampleAudio(audioData, sampleRate, _config.SampleRate);
         }
 
         // Convert to tensor with correct shape

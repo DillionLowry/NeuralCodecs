@@ -1,4 +1,3 @@
-using NAudio.Codecs;
 using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.Config.SNAC;
 using NeuralCodecs.Torch.Modules.DAC;
@@ -80,7 +79,7 @@ public class DACConfig: IModelConfig
     /// Gets or sets the audio sampling rate in Hz.
     /// </summary>
     [JsonPropertyName("sampling_rate")]
-    public int SamplingRate { get; set; } = 44100;
+    public int SampleRate { get; set; } = 44100;
     [JsonIgnore]
     public string Tag { get; set; } = "latest";
     [JsonPropertyName("torch_dtype")]
@@ -118,7 +117,7 @@ public class DACConfig: IModelConfig
     [JsonIgnore]
     public static DACConfig DAC24kHz => new()
     {
-        SamplingRate = 24000,
+        SampleRate = 24000,
         ModelType = "24khz",
         NumCodebooks = 32,
         EncoderRates = [2, 4, 5, 8],
@@ -129,7 +128,7 @@ public class DACConfig: IModelConfig
     [JsonIgnore]
     public static DACConfig DAC16kHz => new()
     {
-        SamplingRate = 16000,
+        SampleRate = 16000,
         ModelType = "16khz",
         NumCodebooks = 12,
         EncoderRates = [2, 4, 5, 8],

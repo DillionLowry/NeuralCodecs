@@ -13,7 +13,7 @@ namespace NeuralCodecs.Core.Configuration
         /// <summary>
         /// Gets or sets the sampling rate in Hz for audio processing.
         /// </summary>
-        int SamplingRate { get; set; }
+        int SampleRate { get; set; }
 
         /// <summary>
         /// Gets or sets the architecture name of the model.

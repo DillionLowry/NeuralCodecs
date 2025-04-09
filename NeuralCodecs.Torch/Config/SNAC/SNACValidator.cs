@@ -22,8 +22,8 @@ namespace NeuralCodecs.Torch.Config.SNAC
         {
             var errors = new List<string>();
 
-            if (config.SamplingRate <= 0)
-                errors.Add($"Invalid sampling rate: {config.SamplingRate}");
+            if (config.SampleRate <= 0)
+                errors.Add($"Invalid sampling rate: {config.SampleRate}");
 
             if (config.EncoderDim <= 0)
                 errors.Add($"Invalid encoder dimension: {config.EncoderDim}");
@@ -72,22 +72,14 @@ namespace NeuralCodecs.Torch.Config.SNAC
             {
                 return ValidationResult.Failed($"Expected SNAC model but got {model.GetType().Name}");
             }
-            //TODO
-            var dict = snacModel.state_dict();
-            var shapetracker = new ShapeTracker();
-            foreach (var kvp in dict)
-            {
-                Console.WriteLine($"Key: {kvp.Key}, Value: {kvp.Value}");
-                shapetracker.Track(kvp.Key, kvp.Value, "state_dict");
-            }
-            shapetracker.DumpShapes();
+
             var errors = new List<string>();
 
             try
             {
                 using var scope = torch.NewDisposeScope();
                 // Create 100ms of audio at the model's sample rate for quick validation
-                var sampleLength = (int)(config.SamplingRate * 0.1);
+                var sampleLength = (int)(config.SampleRate * 0.1);
                 var input = torch.randn(1, 1, sampleLength);
 
                 if (config.Device?.Type is DeviceType.CUDA)
@@ -137,7 +129,7 @@ namespace NeuralCodecs.Torch.Config.SNAC
                         var lengthDiff = Math.Abs(expectedLength - actualLength);
 
                         // Allow for some padding/alignment differences but not too large
-                        if (lengthDiff > config.SamplingRate * 0.01) // More than 1% difference
+                        if (lengthDiff > config.SampleRate * 0.01) // More than 1% difference
                         {
                             errors.Add($"Model output length {actualLength} differs significantly from expected {expectedLength}");
                         }

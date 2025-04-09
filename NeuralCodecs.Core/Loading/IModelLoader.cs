@@ -56,6 +56,26 @@ namespace NeuralCodecs.Core.Loading
             where TConfig : class, IModelConfig;
 
         /// <summary>
+        /// Loads a model asynchronously without requiring a configuration.
+        /// The model will be created with its built-in class defaults.
+        /// </summary>
+        /// <typeparam name="TModel">The type of model to load.</typeparam>
+        /// <param name="path">The path or identifier of the model to load.</typeparam>
+        /// <param name="options">Optional loading options.</param>
+        /// <returns>The loaded model instance.</returns>
+        Task<TModel> LoadModelAsync<TModel>(string path, ModelLoadOptions? options = null)
+            where TModel : class, INeuralCodec;
+    
+        /// <summary>
+        /// Loads a model asynchronously by detecting its type from the file structure.
+        /// No configuration is required as the model will use its built-in defaults.
+        /// </summary>
+        /// <param name="path">The path or identifier of the model to load.</param>
+        /// <param name="options">Optional loading options.</param>
+        /// <returns>The loaded neural codec model instance.</returns>
+        //Task<INeuralCodec> LoadModelWithoutConfigAsync(string path, ModelLoadOptions? options = null);
+
+        /// <summary>
         /// Gets information about a model without loading it
         /// </summary>
         /// <param name="source">Model source (local path or remote identifier)</param>

@@ -1,31 +1,67 @@
-﻿using System.Runtime.Serialization;
+﻿using NeuralCodecs.Core.Operations;
+using System.Runtime.Serialization;
 
 namespace NeuralCodecs.Core.Exceptions
 {
-    /// <summary>
-    /// Exception thrown when cache operations fail.
-    /// </summary>
-    public class CacheException : Exception
-    {
-        public string? CachePath { get; }
 
-        public CacheException() : base() { }
 
-        public CacheException(string message) : base(message) { }
-
-        public CacheException(string message, Exception innerException)
-            : base(message, innerException) { }
-
-        public CacheException(string message, string cachePath)
-            : base(message)
+        /// <summary>
+        /// Exception thrown when a cache operation fails
+        /// </summary>
+        public class CacheException : NeuralCodecException
         {
-            CachePath = cachePath;
-        }
+            /// <summary>
+            /// Gets the path to the cache
+            /// </summary>
+            public string? CachePath { get; }
 
-        public CacheException(string message, string cachePath, Exception innerException)
-            : base(message, innerException)
-        {
-            CachePath = cachePath;
+            /// <summary>
+            /// Gets the model ID
+            /// </summary>
+            public string? ModelId { get; }
+
+            /// <summary>
+            /// Creates a new cache exception
+            /// </summary>
+            public CacheException() : base() { }
+
+            /// <summary>
+            /// Creates a new cache exception with a message
+            /// </summary>
+            public CacheException(string message) : base(message) { }
+
+            /// <summary>
+            /// Creates a new cache exception with a message and inner exception
+            /// </summary>
+            public CacheException(string message, Exception innerException)
+                : base(message, innerException) { }
+
+            /// <summary>
+            /// Creates a new cache exception with context
+            /// </summary>
+            public CacheException(string message, string cachePath, string? modelId = null)
+                : base(message)
+            {
+                CachePath = cachePath;
+                ModelId = modelId;
+
+                if (cachePath != null) WithDiagnostic("CachePath", cachePath);
+                if (modelId != null) WithDiagnostic("ModelId", modelId);
+            }
+
+            /// <summary>
+            /// Creates a new cache exception with context and inner exception
+            /// </summary>
+            public CacheException(string message, string cachePath, Exception innerException, string? modelId = null)
+                : base(message, innerException)
+            {
+                CachePath = cachePath;
+                ModelId = modelId;
+
+                if (cachePath != null) WithDiagnostic("CachePath", cachePath);
+                if (modelId != null) WithDiagnostic("ModelId", modelId);
+            }
+
         }
     }
-}
+

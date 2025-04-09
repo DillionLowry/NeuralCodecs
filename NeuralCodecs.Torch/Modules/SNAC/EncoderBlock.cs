@@ -24,7 +24,6 @@ public class EncoderBlock : Module<Tensor, Tensor>
     /// <param name="inputDim">Input channel dimension (defaults to outputDim/2)</param>
     /// <param name="stride">Stride factor for downsampling</param>
     /// <param name="groups">Number of groups for grouped convolutions</param>
-    /// <remarks>
     public EncoderBlock(int outputDim = 16, int? inputDim = null, int stride = 1, int groups = 1)
         : base($"EncoderBlock_{outputDim}")
     {

@@ -1,14 +1,19 @@
 ﻿using NeuralCodecs.Core.Loading;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace NeuralCodecs.Core.Utils
 {
-    internal class FileUtil
+    /// <summary>
+    /// Provides utility methods for file operations.
+    /// </summary>
+    public static class FileUtils
     {
         private static readonly Dictionary<string, ModelFileType> ExtensionMap = new()
         {
@@ -36,6 +41,19 @@ namespace NeuralCodecs.Core.Utils
         };
 
         /// <summary>
+        /// Computes the SHA-256 hash of a file.
+        /// </summary>
+        /// <param name="filePath">Path to the file.</param>
+        /// <returns>Base64-encoded hash string.</returns>
+        public static async Task<string> ComputeFileHashAsync(string filePath)
+        {
+            using var sha256 = SHA256.Create();
+            using var stream = File.OpenRead(filePath);
+            var hash = await sha256.ComputeHashAsync(stream);
+            return Convert.ToBase64String(hash);
+        }
+
+        /// <summary>
         /// Detects the model file type from a file path and optionally its contents
         /// </summary>
         /// <param name="filePath">Path to the model file</param>
@@ -51,63 +69,72 @@ namespace NeuralCodecs.Core.Utils
             }
             return ModelFileType.Unknown;
         }
+
         /// <summary>
-        /// Detects the model file type from a file path and optionally its contents
+        /// Detects the type of a model file based on its contents.
         /// </summary>
-        /// <param name="filePath">Path to the model file</param>
-        /// <param name="checkContents">Whether to also check file contents for signatures</param>
-        /// <returns>Detected ModelFileType</returns>
+        /// <param name="filePath">Path to the model file.</param>
+        /// <returns>The detected model file type.</returns>
         public static async Task<ModelFileType> DetectFileTypeFromContentsAsync(string filePath)
         {
-            var extension = Path.GetExtension(filePath).ToLowerInvariant();
+            if (!File.Exists(filePath))
+                return ModelFileType.Unknown;
 
-            // First check extension
-            if (ExtensionMap.TryGetValue(extension, out var typeFromExt))
+            try
             {
-                //For config and weight files, extension is sufficient
-                if (typeFromExt is ModelFileType.Config or ModelFileType.Weights)
-                {
-                    return typeFromExt;
-                }
-            }
+                string extension = Path.GetExtension(filePath).ToLowerInvariant();
+                
+                // Quick check based on extension
+                if (extension == ".json")
+                    return ModelFileType.Config;
+                    
+                if (extension == ".safetensors")
+                    return ModelFileType.SafeTensors;
+                    
+                if (extension == ".onnx")
+                    return ModelFileType.ONNX;
 
-            // Check file contents if requested
-            if (File.Exists(filePath))
+                // Read first few bytes for signature detection
+                byte[] signature = new byte[8];
+                using (var stream = File.OpenRead(filePath))
+                {
+                    if (stream.Length < 8)
+                        return ModelFileType.Unknown;
+                        
+                    await stream.ReadAsync(signature.AsMemory(0, 8));
+                }
+
+                // PyTorch files often start with these signatures
+                if (signature[0] == 0x80 && signature[1] == 0x02 ||  // Pickle protocol
+                    signature[0] == 0x50 && signature[1] == 0x4B)    // ZIP file (PyTorch checkpoint)
+                {
+                    return extension switch
+                    {
+                        ".pt" or ".pth" => ModelFileType.PyTorch,
+                        ".ckpt" => ModelFileType.Checkpoint,
+                        _ => ModelFileType.PyTorch  // Default to PyTorch for these signatures
+                    };
+                }
+
+                // Other file types based on extension
+                return extension switch
+                {
+                    ".pt" or ".pth" => ModelFileType.PyTorch,
+                    ".bin" => ModelFileType.Weights,
+                    ".pb" => ModelFileType.TensorFlow,
+                    ".tflite" => ModelFileType.TensorFlowLite,
+                    ".torchscript" => ModelFileType.TorchScript,
+                    ".jit" => ModelFileType.TorchJit,
+                    ".ckpt" => ModelFileType.Checkpoint,
+                    _ => ModelFileType.Unknown
+                };
+            }
+            catch
             {
-                try
-                {
-                    const int readSize = 16;
-                    var buffer = new byte[readSize];
-
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        await stream.ReadAsync(buffer.AsMemory(0, readSize));
-                    }
-
-                    // Check each signature
-                    foreach (var (signature, fileType) in SignatureMap)
-                    {
-                        if (buffer.Take(signature.Length).SequenceEqual(signature))
-                        {
-                            return fileType;
-                        }
-                    }
-
-                    // Special checks for specific formats
-                    if (await IsPyTorchStateDict(filePath))
-                    {
-                        return ModelFileType.StateDict;
-                    }
-                }
-                catch
-                {
-                    // If we can't read the file, fall back to extension-based detection
-                }
+                return ModelFileType.Unknown;
             }
-
-            // Fall back to extension-based type if we found one
-            return typeFromExt != 0 ? typeFromExt : ModelFileType.Unknown;
         }
+
         /// <summary>
         /// Checks if a file appears to be a PyTorch state dictionary by examining its structure
         /// </summary>
@@ -150,59 +177,15 @@ namespace NeuralCodecs.Core.Utils
             }
         }
 
-        ///// <summary>
-        ///// Gets a user-friendly description of the model file type
-        ///// </summary>
-        //public static string GetFileTypeDescription(ModelFileType fileType)
-        //{
-        //    return fileType switch
-        //    {
-        //        ModelFileType.PyTorch => "PyTorch Model",
-        //        ModelFileType.SafeTensors => "SafeTensors Model",
-        //        ModelFileType.Checkpoint => "Model Checkpoint",
-        //        ModelFileType.ONNX => "ONNX Model",
-        //        ModelFileType.TensorFlow => "TensorFlow Model",
-        //        ModelFileType.TensorFlowLite => "TensorFlow Lite Model",
-        //        ModelFileType.TorchScript => "TorchScript Model",
-        //        ModelFileType.TorchJit => "TorchJit Model",
-        //        ModelFileType.Config => "Configuration File",
-        //        ModelFileType.Weights => "Weight File",
-        //        ModelFileType.StateDict => "PyTorch State Dictionary",
-        //        _ => "Unknown File Type"
-        //    };
-        //}
-
         /// <summary>
         /// Checks if a file is a valid model file of any supported type
         /// </summary>
         public static bool IsValidModelFile(string filePath)
         {
-            var fileType = FileUtil.DetectFileType(filePath);
+            var fileType = DetectFileType(filePath);
             // TODO: optimize this
-            return fileType is (ModelFileType.PyTorch or ModelFileType.SafeTensors or ModelFileType.Checkpoint or ModelFileType.ONNX or ModelFileType.Weights);
+            return fileType is ModelFileType.PyTorch or ModelFileType.SafeTensors or ModelFileType.Checkpoint or ModelFileType.ONNX or ModelFileType.Weights;
         }
-
-        ///// <summary>
-        ///// Gets the default extension for a given model file type
-        ///// </summary>
-        //public static string GetDefaultExtension(ModelFileType fileType)
-        //{
-        //    return fileType switch
-        //    {
-        //        ModelFileType.PyTorch => ".pt",
-        //        ModelFileType.SafeTensors => ".safetensors",
-        //        ModelFileType.Checkpoint => ".ckpt",
-        //        ModelFileType.ONNX => ".onnx",
-        //        ModelFileType.TensorFlow => ".pb",
-        //        ModelFileType.TensorFlowLite => ".tflite",
-        //        ModelFileType.TorchScript => ".torchscript",
-        //        ModelFileType.TorchJit => ".jit",
-        //        ModelFileType.Config => ".json",
-        //        ModelFileType.Weights => ".bin",
-        //        ModelFileType.StateDict => ".pth",
-        //        _ => ""
-        //    };
-        //}
     }
 }
 

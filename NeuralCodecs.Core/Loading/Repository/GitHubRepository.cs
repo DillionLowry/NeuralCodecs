@@ -576,7 +576,7 @@ missingFiles.Select(f => f.Path))}");
             }
 
             // Verify model file exists
-            var modelFile = expectedFiles.FirstOrDefault(f => FileUtil.IsValidModelFile(f.Path));
+            var modelFile = expectedFiles.FirstOrDefault(f => FileUtils.IsValidModelFile(f.Path));
 
             if (modelFile == null)
             {
@@ -615,7 +615,7 @@ missingFiles.Select(f => f.Path))}");
             // Verify model file format
             if (options.ValidateModel)
             {
-                var fileType = await FileUtil.DetectFileTypeFromContentsAsync(modelPath);
+                var fileType = await FileUtils.DetectFileTypeFromContentsAsync(modelPath);
 
                 if (fileType is ModelFileType.Unknown)
                 {

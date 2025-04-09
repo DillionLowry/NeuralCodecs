@@ -1,4 +1,15 @@
 ﻿
+License notice for EnCodec
+------------------------------------
+
+https://github.com/facebookresearch/encodec
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Licensed under MIT
+
+Available at https://licenses.nuget.org/MIT
+
 License notice for SNAC
 ------------------------------------
 
