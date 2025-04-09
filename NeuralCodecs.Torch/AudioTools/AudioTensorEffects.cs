@@ -13,6 +13,7 @@ namespace NeuralCodecs.Torch.AudioTools
         /// Applies a compressor effect to an audio tensor.
         /// </summary>
         /// <param name="audio">Audio tensor of shape (batch_size, channels, samples).</param>
+        /// <param name="sampleRate"></param>Audio sample rate in Hz.
         /// <param name="threshold">Threshold in dB.</param>
         /// <param name="ratio">Compression ratio.</param>
         /// <param name="attackTime">Attack time in seconds.</param>

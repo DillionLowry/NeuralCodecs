@@ -84,28 +84,18 @@ Models can be loaded in Pytorch or Safetensors format.
 The AudioTools namespace provides extensive audio processing capabilities:
 
 ```csharp
-// Load and normalize audio
-var audioData = AudioLoader.LoadFile("input.wav");
-var normalizedAudio = AudioProcessor.Normalize(audioData);
+var audio = new Tensor(...); // Load or create audio tensor
 
 // Apply effects
-var enhancedAudio = AudioProcessor.ApplyEffect(normalizedAudio, new ReverbEffect {
-    RoomSize = 0.7f,
-    Damping = 0.5f
-});
+var processedAudio = AudioEffects.ApplyCompressor(
+    audio, 
+    sampleRate: 48000,
+    threshold: -20f,
+    ratio: 4.0f);
 
-// Generate spectrograms
-using var spectrogram = SpectrogramGenerator.Generate(
-    audioData, 
-    new SpectrogramOptions { 
-        WindowSize = 2048,
-        HopSize = 512
-    }
-);
-
-// Compare audio quality
-var metrics = AudioQualityAnalyzer.Compare(originalAudio, processedAudio);
-Console.WriteLine($"PESQ Score: {metrics.PESQ}, STOI: {metrics.STOI}");
+// Compute spectrograms and transforms
+var spectrogram = DSP.MelSpectrogram(audio, sampleRate);
+var stft = DSP.STFT(audio, windowSize: 1024, hopSize: 512, windowType: "hann");
 ```
 
 ### Encoding and Decoding Audio
