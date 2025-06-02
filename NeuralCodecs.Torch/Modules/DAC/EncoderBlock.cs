@@ -45,9 +45,13 @@ public class EncoderBlock : Module<Tensor, Tensor>, IDisposable
     /// <summary>
     /// Disposes the resources used by the encoder block.
     /// </summary>
-    public void Dispose()
+    /// <param name="disposing">True to dispose managed resources.</param>
+    protected override void Dispose(bool disposing)
     {
-        block?.Dispose();
-        GC.SuppressFinalize(this);
+        if (disposing)
+        {
+            block?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

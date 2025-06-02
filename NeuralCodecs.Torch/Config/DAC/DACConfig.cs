@@ -23,7 +23,6 @@ public class DACConfig: IModelConfig
     [JsonPropertyName("model_type")]
     public string Architecture { get; set; } = "dac";
 
-    // TODO: Double-check these defaults
     /// <summary>
     /// Gets or sets the dimensionality of each codebook entry.
     /// </summary>
@@ -103,7 +102,6 @@ public class DACConfig: IModelConfig
     [JsonIgnore]
     public static DACConfig DAC44kHz => new();
 
-    // TODO
     [JsonIgnore]
     public static DACConfig DAC44kHz_16kbps => new()
     {

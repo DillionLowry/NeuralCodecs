@@ -345,7 +345,6 @@ public class StateDictNameConverter
         var baseParts = safetensorKey.Split(new[] { ".weight", ".bias", ".alpha" }, StringSplitOptions.None);
         var baseKey = baseParts[0];
 
-        Debug.WriteLine($"Base key: {baseKey}");
         if (keyMap.TryGetValue(baseKey, out var torchKey))
         {
             // Reattach the appropriate suffix

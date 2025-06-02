@@ -12,8 +12,6 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
     private readonly int _encoderDim;
     private readonly Sequential block;
 
-    private bool _disposed;
-
     /// <summary>
     /// Initializes a new instance of the Encoder class.
     /// </summary>
@@ -59,22 +57,12 @@ public class Encoder : Module<Tensor, Tensor>, IDisposable
     /// <returns>Encoded representation of the input</returns>
     public override Tensor forward(Tensor x) => block.forward(x);
 
-    public new void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
-            if (disposing)
-            {
-                block?.Dispose();
-            }
-            base.Dispose(disposing);
-            _disposed = true;
+            block?.Dispose();
         }
+        base.Dispose(disposing);
     }
 }

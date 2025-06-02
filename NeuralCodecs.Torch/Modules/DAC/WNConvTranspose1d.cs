@@ -141,28 +141,25 @@ public class WNConvTranspose1d : Module<Tensor, Tensor>
     /// </returns>
     public override Tensor forward(Tensor input)
     {
-        try
-        {
-            var vNorm = weight_v.contiguous().pow(2)
-                .sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32)
-                .sqrt();
-            var nWeight = mul(weight_v.div(vNorm), weight_g.sub(1e-7f)).contiguous();
+        using var scope = NewDisposeScope();
 
-            return functional.conv_transpose1d(
-                input,
-                nWeight,
-                bias,
-                stride: _stride,
-                padding: _padding,
-                output_padding: _outputPadding,
-                groups: _groups,
-                dilation: _dilation);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+        var weightSquared = weight_v.contiguous().pow(2);
+        var vNorm = weightSquared.sum(new long[] { 1, 2 }, keepdim: true, ScalarType.Float32).sqrt();
+        var normalized = weight_v.div(vNorm.add(1e-7f));
+
+        var nWeight = mul(normalized, weight_g).contiguous();
+
+        var result = functional.conv_transpose1d(
+            input,
+            nWeight,
+            bias,
+            stride: _stride,
+            padding: _padding,
+            output_padding: _outputPadding,
+            groups: _groups,
+            dilation: _dilation);
+
+        return result.MoveToOuterDisposeScope();
     }
 
     /// <inheritdoc/>

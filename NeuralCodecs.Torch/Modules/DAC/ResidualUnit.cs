@@ -16,8 +16,6 @@ public class ResidualUnit : Module<Tensor, Tensor>
     /// </summary>
     private readonly Sequential block;
 
-    private bool _disposed;
-
     /// <summary>
     /// Initializes a new instance of the ResidualUnit class
     /// </summary>
@@ -51,26 +49,21 @@ public class ResidualUnit : Module<Tensor, Tensor>
     /// </remarks>
     public override Tensor forward(Tensor x)
     {
-        using var scope = torch.NewDisposeScope();
         var y = block.forward(x);
         var pad = (int)(x.shape[^1] - y.shape[^1]) / 2;
         if (pad > 0)
         {
             x = x[.., .., pad..^pad];
         }
-        return x.add(y).MoveToOuterDisposeScope();
+        return y.add_(x);
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
-            if (disposing)
-            {
-                block?.Dispose();
-            }
-            base.Dispose(disposing);
-            _disposed = true;
+            block?.Dispose();
         }
+        base.Dispose(disposing);
     }
 }

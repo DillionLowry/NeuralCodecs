@@ -141,15 +141,16 @@ public class WNConv1d : Module<Tensor, Tensor>
         using var scope = NewDisposeScope();
 
         // Compute norm per output channel
-        var v_norm = weight_v.contiguous().pow(2)
-                           .sum([1, 2], keepdim: true, ScalarType.Float32)
-                           .sqrt();
+        var weightSquared = weight_v.contiguous().pow(2);
+        var v_norm = weightSquared.sum([1, 2], keepdim: true, ScalarType.Float32).sqrt();
 
-        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+        var normalized = weight_v.div(v_norm.add(1e-7f));
+        weight = mul(normalized, weight_g).contiguous();
 
-        return functional.conv1d(input, weight, bias, _stride,
-                                    _padding, _dilation, _groups)
-                                    .MoveToOuterDisposeScope();
+        var result = functional.conv1d(input, weight, bias, _stride,
+                                _padding, _dilation, _groups);
+
+        return result.MoveToOuterDisposeScope();
     }
 
     // Used in the DAC Discriminator

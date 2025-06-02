@@ -1,4 +1,3 @@
-using TorchSharp;
 using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Modules.DAC;
@@ -53,14 +52,12 @@ public class SISDRLoss : AudioLossBase
         }
         else if (x.dim() == 2)
         {
-            if (x.size(0) == 1 || x.size(0) == 2)
+            if (x.size(0) is 1 or 2)
             {
-                // Likely (channels, time)
                 return x.unsqueeze(0);
             }
             else
             {
-                // Likely (batch, time)
                 return x.unsqueeze(1);
             }
         }
@@ -120,8 +117,8 @@ public class SISDRLoss : AudioLossBase
         {
             var referenceMean = references.mean([1], keepdim: true);
             var estimateMean = estimates.mean([1], keepdim: true);
-            references = references - referenceMean;
-            estimates = estimates - estimateMean;
+            references -= referenceMean;
+            estimates -= estimateMean;
         }
 
         // Compute scaling factor if requested
@@ -141,7 +138,7 @@ public class SISDRLoss : AudioLossBase
         var errorPower = (errorSignal * errorSignal).sum(1);
 
         // Compute loss in dB
-        var loss = -10 * log10(targetPower / (errorPower + EPS) + EPS);
+        var loss = -10 * log10((targetPower / (errorPower + EPS)) + EPS);
 
         // Apply clipping if requested
         if (_clipMin.HasValue)
@@ -164,17 +161,5 @@ public class SISDRLoss : AudioLossBase
         // else "none" - return as is
 
         return loss * _weight;
-    }
-
-    /// <summary>
-    /// Disposes of unmanaged resources
-    /// </summary>
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            // No tensors to dispose since we don't keep any persistent state
-        }
-        base.Dispose(disposing);
     }
 }

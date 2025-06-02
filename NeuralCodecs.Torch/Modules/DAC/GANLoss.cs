@@ -86,10 +86,11 @@ public class GANLoss : AudioLossBase
     /// </summary>
     public override Tensor forward(Tensor fake, Tensor real)
     {
+        using var scope = NewDisposeScope();
         var (fakeAudio, _) = GetAudioTensor(fake);
         var (realAudio, _) = GetAudioTensor(real);
-        var (fakePreds, realPreds) = GetDiscriminatorOutputs(fakeAudio, realAudio);
-        return fakePreds[^1];  // Return final discriminator output
+        var (fakePreds, _) = GetDiscriminatorOutputs(fakeAudio, realAudio);
+        return fakePreds[^1].MoveToOuterDisposeScope();  // Return final discriminator output
     }
 
     protected override void Dispose(bool disposing)

@@ -26,8 +26,6 @@ public class Snake1d : Module<Tensor, Tensor>
     /// </summary>
     private const float EPSILON = 1e-9f;
 
-    private bool _disposed;
-
     /// <summary>
     /// Initializes Snake activation with learnable parameters
     /// </summary>
@@ -44,29 +42,6 @@ public class Snake1d : Module<Tensor, Tensor>
     }
 
     /// <summary>
-    /// Performs an optimized sine calculation with precision and synchronization controls
-    /// based on whether GPU or CPU computation is being used.
-    /// </summary>
-    /// <param name="x">Input tensor to compute sine of</param>
-    /// <returns>
-    /// Sine of input tensor with controlled precision and synchronization
-    /// </returns>
-    private static Tensor OptimizedSin(Tensor x)
-    {
-        GC.Collect();
-        // For non-CUDA tensors just do simple conversion
-        if (!x.is_cuda)
-        {
-            return torch.sin_(x);
-        }
-
-        // For CUDA tensors, synchronize after in-place operation
-        torch.sin_(x);
-        cuda.synchronize();
-        return x;
-    }
-
-    /// <summary>
     /// Performs forward pass of Snake activation: x + (1/α) * sin²(αx)
     /// </summary>
     /// <param name="x">Input tensor of shape (batch, channels, time)</param>
@@ -75,38 +50,31 @@ public class Snake1d : Module<Tensor, Tensor>
     {
         using var scope = NewDisposeScope();
 
-        var shape = x.shape;
-        var reshaped = x.view(shape[0], shape[1], -1);
+        // Calculate alpha * x
+        using var alphaTensor = alpha * x;
+        // Calculate sin(alpha * x)
+        using var sinVal = sin(alphaTensor);
+        // Calculate sin²(alpha * x)
+        using var sinSquared = sinVal.pow(2);
 
-        // Follow exact torch graph operation order
-        var alpha_mul = alpha.mul(reshaped);
-        var sin_result = OptimizedSin(alpha_mul).pow(2);
+        // Apply the snake formula: x + sin²(alpha * x) / alpha
+        var output = torch.where(alpha == 0, x, addcdiv(x, sinSquared, alpha, 1));
 
-        var reciprocal = alpha.add(EPSILON).reciprocal();
-        var mul_result = reciprocal.mul(sin_result);
+        if (cuda_is_available())
+        {
+            cuda.synchronize();
+        }
 
-        var output = reshaped.add(mul_result, alpha: 1.0f)
-                        .view(shape);
         return output.MoveToOuterDisposeScope();
     }
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
-            if (disposing)
-            {
-                alpha?.Dispose();
-            }
-            base.Dispose(disposing);
-            _disposed = true;
+            alpha?.Dispose();
         }
-    }
-
-    public void Dispose()
-    {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+        base.Dispose(disposing);
     }
 }
