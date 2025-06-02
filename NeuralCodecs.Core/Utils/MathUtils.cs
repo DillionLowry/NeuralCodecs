@@ -10,7 +10,11 @@ public static class MathUtils
     /// <returns>The greatest common divisor of the two numbers</returns>
     public static long GCD(long a, long b)
     {
-        if (a == 0 && b == 0) throw new ArgumentException("Both numbers cannot be 0");
+        if (a == 0 && b == 0)
+        {
+            throw new ArgumentException("Both numbers cannot be 0");
+        }
+
         a = Math.Abs(a);
         b = Math.Abs(b);
         while (b != 0)
@@ -21,6 +25,7 @@ public static class MathUtils
         }
         return a;
     }
+
     /// <summary>
     /// Calculates Greatest Common Divisor (GCD) of two numbers.
     /// </summary>
@@ -29,7 +34,11 @@ public static class MathUtils
     /// <returns>The greatest common divisor of the two numbers</returns>
     public static long GCD(int a, int b)
     {
-        if (a == 0 && b == 0) throw new ArgumentException("Both numbers cannot be 0");
+        if (a == 0 && b == 0)
+        {
+            throw new ArgumentException("Both numbers cannot be 0");
+        }
+
         a = Math.Abs(a);
         b = Math.Abs(b);
         while (b != 0)
@@ -40,6 +49,7 @@ public static class MathUtils
         }
         return a;
     }
+
     /// <summary>
     /// Calculates Least Common Multiple (LCM) of two numbers.
     /// </summary>
@@ -58,7 +68,7 @@ public static class MathUtils
     /// <returns>The linear scale value</returns>
     public static double DecibelToLinear(double db)
     {
-        return Math.Pow(10.0, (db / 20.0));
+        return Math.Pow(10.0, db / 20.0);
     }
 
     /// <summary>
@@ -68,7 +78,11 @@ public static class MathUtils
     /// <returns>The decibel value</returns>
     public static double LinearToDecibel(double linear)
     {
-        if (linear <= 0) throw new ArgumentException("Linear value must be positive");
+        if (linear <= 0)
+        {
+            throw new ArgumentException("Linear value must be positive");
+        }
+
         return 20.0 * Math.Log10(linear);
     }
 
@@ -92,6 +106,13 @@ public static class MathUtils
         return 700.0 * (Math.Pow(10.0, mel / 2595.0) - 1.0);
     }
 
+    /// <summary>
+    /// Computes the error function (erf) of a given value.
+    /// </summary>
+    /// <remarks>Represents the probability that a random variable with a normal distribution
+    /// is within a certain range of values.</remarks>
+    /// <param name="x">The input value for which to compute the error function. Can be positive or negative.</param>
+    /// <returns>The computed value of the error function for the input <paramref name="x"/>. The result is in the range [-1, 1].</returns>
     public static double Erf(double x)
     {
         const double a1 = 0.254829592;
@@ -104,12 +125,15 @@ public static class MathUtils
         // Save the sign of x
         int sign = 1;
         if (x < 0)
+        {
             sign = -1;
+        }
+
         x = Math.Abs(x);
 
         // A&S formula 7.1.26
-        double t = 1.0 / (1.0 + p * x);
-        double y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.Exp(-x * x);
+        double t = 1.0 / (1.0 + (p * x));
+        double y = 1.0 - (((((((((a5 * t) + a4) * t) + a3) * t) + a2) * t) + a1) * t * Math.Exp(-x * x));
 
         return sign * y;
     }
