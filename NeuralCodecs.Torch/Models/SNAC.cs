@@ -9,7 +9,6 @@ using TorchSharp;
 using TorchSharp.PyBridge;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
-using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
 
 namespace NeuralCodecs.Torch.Models;
 
@@ -91,11 +90,12 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
     /// </returns>
     public override (Tensor audio, List<Tensor> codes) forward(Tensor audioData)
     {
-        using var scope = NewDisposeScope();
+        using var mode = inference_mode();
+
         var length = audioData.shape[^1];
         audioData = Preprocess(audioData);
 
-        var z = encoder.forward(audioData);
+        using var z = encoder.forward(audioData);
         var (zQ, codes) = quantizer.forward(z);
         var audioHat = decoder.forward(zQ);
 
@@ -112,8 +112,10 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
     /// <returns>A list of quantized code tensors</returns>
     public List<Tensor> Encode(Tensor audioData)
     {
-        audioData = Preprocess(audioData);
-        var z = encoder.forward(audioData);
+        using var mode = inference_mode();
+
+        using var preprocessed = Preprocess(audioData);
+        using var z = encoder.forward(audioData);
         var (_, codes) = quantizer.forward(z);
 
         return codes;
@@ -129,6 +131,7 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
         ArgumentNullException.ThrowIfNull(audioData);
 
         using var scope = torch.NewDisposeScope();
+        using var mode = inference_mode();
 
         // Convert input audio data to tensor
         var inputTensor = torch.tensor(audioData, dtype: torch.float32)
@@ -136,8 +139,8 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
                               .to(_device);
 
         // Preprocess and encode
-        inputTensor = Preprocess(inputTensor);
-        var z = encoder.forward(inputTensor);
+        var preprocessed = Preprocess(inputTensor);
+        var z = encoder.forward(preprocessed);
         var (_, codes) = quantizer.forward(z);
 
         // Convert codes to float arrays
@@ -201,6 +204,15 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
 
         try
         {
+            set_default_device(CPU);
+            if (_device != CPU)
+            {
+                using (no_grad())
+                {
+                    this.to(CPU);
+                }
+            }
+
             switch (FileUtils.DetectFileType(path))
             {
                 case ModelFileType.PyTorch:
@@ -216,6 +228,15 @@ public partial class SNAC : Module<Tensor, (Tensor audio, List<Tensor> codes)>, 
                 default:
                     this.load(path);
                     break;
+            }
+
+            if (_device != CPU)
+            {
+                using (no_grad())
+                {
+                    this.to(_device);
+                    set_default_device(_device);
+                }
             }
         }
         catch (Exception ex) when (ex is not (FileNotFoundException))
