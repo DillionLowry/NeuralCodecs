@@ -21,8 +21,6 @@ namespace NeuralCodecs.Core.Loading
             where TConfig : class, IModelConfig
         {
             var modelType = typeof(TModel);
-
-            // Store the factory with type conversion
             _factories[modelType] = (config) => factory((TConfig)config);
         }
 
@@ -38,15 +36,41 @@ namespace NeuralCodecs.Core.Loading
             where TModel : class, INeuralCodec
             where TConfig : class, IModelConfig
         {
-            var mType = typeof(TModel);
+            var modelType = typeof(TModel);
 
-            if (!_factories.TryGetValue(mType, out var factory))
+            if (_factories.TryGetValue(modelType, out var factory))
             {
-                throw new LoadException(
-                    $"No factory registered for type: {mType.Name}");
+                return (TModel)factory(config);
             }
 
-            return (TModel)factory(config);
+            try
+            {
+                // // If no factory registered, attempt default factory pattern TModel(TConfig config)
+                var constructorParams = new object[] { config };
+
+                if (Activator.CreateInstance(modelType, constructorParams) is TModel model)
+                {
+                    // Cache the successful constructor pattern for future use
+                    _factories[modelType] = (c) => (TModel)Activator.CreateInstance(modelType, c)!;
+                    return model;
+                }
+
+                throw new LoadException(
+                    $"Failed to create instance of {modelType.Name} using default constructor pattern");
+            }
+            catch (MissingMethodException ex)
+            {
+                throw new LoadException(
+                    $"No factory registered for {modelType.Name} and no suitable constructor found. " +
+                    $"Expected constructor: {modelType.Name}({typeof(TConfig).Name} config)", ex);
+            }
+            catch (Exception ex) when (
+                ex is not LoadException &&
+                ex is not ArgumentException)
+            {
+                throw new LoadException(
+                    $"Failed to create instance of {modelType.Name} using default constructor pattern", ex);
+            }
         }
 
         /// <summary>
