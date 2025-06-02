@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using TorchSharp.Modules;
 using static NeuralCodecs.Torch.Utils.TorchUtils;
 using static TorchSharp.torch;
@@ -103,7 +102,6 @@ public class SEANetDecoder : Module<Tensor, Tensor>
                 trimRightRatio: trimRightRatio));
 
             // Add residual layers
-            Debug.WriteLine($"SEANetDecoder residual layers: {nResidualLayers}");
             for (int j = 0; j < nResidualLayers; j++)
             {
                 modules.Add(new SEANetResnetBlock(
@@ -154,6 +152,7 @@ public class SEANetDecoder : Module<Tensor, Tensor>
         return layers.forward(x);
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

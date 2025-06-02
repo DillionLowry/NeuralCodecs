@@ -85,6 +85,7 @@ public class SEANetResnetBlock : Module<Tensor, Tensor>
         return add(shortcutOut, blockOut).MoveToOuterDisposeScope();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

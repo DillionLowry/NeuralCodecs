@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -100,10 +99,7 @@ public class NormConv1d : Module<Tensor, Tensor>
         return convOut.MoveToOuterDisposeScope();
     }
 
-    /// <summary>
-    /// Disposes the managed resources used by the module.
-    /// </summary>
-    /// <param name="disposing">True to dispose managed resources, false otherwise.</param>
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -186,7 +182,6 @@ public class NormConv1d : Module<Tensor, Tensor>
         int stride, int padding, long dilation, int groups,
         string norm, bool bias, bool casual)
     {
-        Debug.WriteLine($"Validating NormConv parameters: inchannels: {inChannels}, outchannels: {outChannels}, kernelSize: {kernelSize}, stride: {stride}, padding: {padding}, dilation: {dilation}, groups: {groups}, bias={bias}, casual={casual}, norm: {norm}");
         if (inChannels <= 0)
         {
             throw new ArgumentException($"Input channels must be positive, got {inChannels}");

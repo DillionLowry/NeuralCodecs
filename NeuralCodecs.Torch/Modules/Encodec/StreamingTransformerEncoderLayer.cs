@@ -110,6 +110,7 @@ public class StreamingTransformerEncoderLayer : Module<Tensor, (Tensor output, T
         return (output.MoveToOuterDisposeScope(), inputForState.MoveToOuterDisposeScope());
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

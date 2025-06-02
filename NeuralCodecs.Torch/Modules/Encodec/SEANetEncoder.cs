@@ -1,6 +1,3 @@
-using NeuralCodecs.Torch.Utils;
-using System.Collections.Immutable;
-using System.Diagnostics;
 using TorchSharp.Modules;
 using static NeuralCodecs.Torch.Utils.TorchUtils;
 using static TorchSharp.torch;
@@ -13,7 +10,7 @@ namespace NeuralCodecs.Torch.Modules.Encodec;
 /// </summary>
 public class SEANetEncoder : Module<Tensor, Tensor>
 {
-    private int[] _ratios;
+    private readonly int[] _ratios;
     public readonly Sequential layers;
 
     /// <summary>
@@ -65,7 +62,6 @@ public class SEANetEncoder : Module<Tensor, Tensor>
         normParams ??= new Dictionary<string, object>();
 
         ValidateParameters(dimension, nFilters, kernelSize, lastKernelSize, residualKernelSize);
-        Debug.WriteLine($"SEANetEncoder: channels={channels} dimension={dimension} nFilters={nFilters} kernelSize={kernelSize} lastKernelSize={lastKernelSize} residualKernelSize={residualKernelSize}");
 
         var act = GetActivation(activation, activationParams);
         var mult = 1;
@@ -133,8 +129,15 @@ public class SEANetEncoder : Module<Tensor, Tensor>
         RegisterComponents();
     }
 
+    /// <summary>
+    /// Gets the dimension of the intermediate representation.
+    /// </summary>
     public int Dimension { get; }
-    public int TotalRatio => _ratios.Aggregate((a, b) => a * b); // TODO: rename hoplength
+
+    /// <summary>
+    /// Gets the total ratio by multiplying all elements in the ratios array.
+    /// </summary>
+    public int TotalRatio => _ratios.Aggregate((a, b) => a * b);
 
     public override Tensor forward(Tensor x)
     {
@@ -144,6 +147,7 @@ public class SEANetEncoder : Module<Tensor, Tensor>
         return layers.forward(x);
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

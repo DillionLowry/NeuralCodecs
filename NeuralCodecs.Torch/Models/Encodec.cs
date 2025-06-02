@@ -30,10 +30,9 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
     private readonly SEANetEncoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
     private float? _bandwidth;
-    private bool _configDeviceLoaded;
     private EncodecLanguageModel? _lm;
     private bool _lmModelWeightsLoaded;
-    public torch.Device device => this.parameters().First().device;
+    public torch.Device Device => TorchUtils.GetDevice(_config.Device);
 
     #endregion Fields
 
@@ -53,7 +52,6 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
                 $"Invalid bandwidth {config.Bandwidth}. " +
                 $"Select one of [{string.Join(", ", config.TargetBandwidths)}]");
         }
-        Debug.WriteLine($"EncodecModel config: channels={config.Channels} dimension={config.HiddenSize}");
         _targetBandwidths = config.TargetBandwidths.ToList();
         _bandwidth = config.Bandwidth;
         encoder = new SEANetEncoder(
@@ -247,7 +245,7 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
         ArgumentNullException.ThrowIfNull(audioData);
 
         // Convert input audio data to tensor
-        var inputTensor = tensor(audioData, dtype: float32, device: device)
+        var inputTensor = tensor(audioData, dtype: float32, device: Device)
                                 .reshape(1, _config.Channels, -1);
         return Encode(inputTensor);
     }
@@ -260,8 +258,11 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
     /// <exception cref="ArgumentException">Thrown when input tensor has invalid shape or channels.</exception>
     public List<EncodedFrame> Encode(Tensor x)
     {
-        x = x.to(device);
+        using var inference = torch.inference_mode();
+
+        x = x.to(Device);
         ValidateInputTensor(x);
+
         long channels = x.size(1);
         long length = x.size(2);
         if (channels is <= 0 or > 2)
@@ -330,7 +331,7 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
 
         using (torch.no_grad())
         {
-            _lm.to(device);
+            _lm.to(Device);
         }
 
         _lm.eval();
@@ -353,12 +354,13 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
 
         try
         {
-            var statedict = state_dict();
-            using (StreamWriter sw = new StreamWriter("EncodecModuleStateDict.txt"))
+            set_default_device(CPU);
+            if (Device != CPU)
             {
-                foreach (var (key, value) in statedict)
+                using (no_grad())
                 {
-                    sw.WriteLine($"{key} : {value}");
+                    this.to(CPU);
+                    _lm?.to(CPU);
                 }
             }
 
@@ -381,13 +383,16 @@ public class Encodec : Module<Tensor, Tensor>, INeuralCodec
                     this.load(path, false);
                     break;
             }
-            if (!_configDeviceLoaded && this.device != TorchUtils.GetDevice(_config.Device))
+
+            if (Device != CPU)
             {
                 using (torch.no_grad())
                 {
-                    this.to(TorchUtils.GetDevice(_config.Device));
+                    this.to(Device);
+                    _lm?.to(Device);
+                    set_default_device(Device);
+
                 }
-                _configDeviceLoaded = true;
             }
         }
         catch (Exception ex)
