@@ -49,22 +49,11 @@ public class Snake1d : Module<Tensor, Tensor>
     public override Tensor forward(Tensor x)
     {
         using var scope = NewDisposeScope();
-
-        // Calculate alpha * x
-        using var alphaTensor = alpha * x;
-        // Calculate sin(alpha * x)
-        using var sinVal = sin(alphaTensor);
-        // Calculate sin²(alpha * x)
-        using var sinSquared = sinVal.pow(2);
-
-        // Apply the snake formula: x + sin²(alpha * x) / alpha
-        var output = torch.where(alpha == 0, x, addcdiv(x, sinSquared, alpha, 1));
-
+        var output = torch.where(alpha == 0, x, addcdiv(x, sin(alpha * x).pow_(2), alpha, 1));
         if (cuda_is_available())
         {
             cuda.synchronize();
         }
-
         return output.MoveToOuterDisposeScope();
     }
 

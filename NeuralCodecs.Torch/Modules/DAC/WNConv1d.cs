@@ -43,6 +43,7 @@ public class WNConv1d : Module<Tensor, Tensor>
     /// <param name="dilation">Spacing between kernel elements. Default is 1.</param>
     /// <param name="groups">Number of blocked connections from input channels to output channels. Default is 1.</param>
     /// <param name="useBias">If true, adds a learnable bias to the output. Default is true.</param>
+    /// <param name="device"></param>
     public WNConv1d(long inChannels, long outChannels, long kernelSize,
         long stride = 1, long padding = 0, long dilation = 1, long groups = 1, bool useBias = true, Device device = null)
         : base($"WNConv1d_{inChannels}_{outChannels}")
@@ -144,6 +145,7 @@ public class WNConv1d : Module<Tensor, Tensor>
         var weightSquared = weight_v.contiguous().pow(2);
         var v_norm = weightSquared.sum([1, 2], keepdim: true, ScalarType.Float32).sqrt();
 
+        // Divide weight_v by its norm and multiply by weight_g
         var normalized = weight_v.div(v_norm.add(1e-7f));
         weight = mul(normalized, weight_g).contiguous();
 

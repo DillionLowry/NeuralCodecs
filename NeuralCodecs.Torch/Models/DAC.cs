@@ -209,7 +209,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         using var scope = torch.NewDisposeScope();
         using var inferenceScope = torch.inference_mode();
 
-
         // Convert input audio data to tensor
         var inputTensor = torch.tensor(audioData, dtype: torch.float32, _device)
                               .reshape(1, 1, -1)
