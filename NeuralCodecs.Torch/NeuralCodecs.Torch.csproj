@@ -21,14 +21,14 @@
 	  <PackageProjectUrl>https://github.com/DillionLowry/NeuralCodecs</PackageProjectUrl>
 	  <RepositoryUrl>https://github.com/DillionLowry/NeuralCodecs</RepositoryUrl>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>	  
+	  <PackageLicenseFile>LICENSE.md</PackageLicenseFile>	  
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
 	  <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\LICENSE.txt">
+    <None Include="..\LICENSE.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>

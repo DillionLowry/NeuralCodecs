@@ -9,8 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeuralCodecs.Torch", "Neura
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8CD219C6-C9AD-4C84-B0B8-487298C20CD1}"
 	ProjectSection(SolutionItems) = preProject
-		LICENSE.txt = LICENSE.txt
 		nc_logo.png = nc_logo.png
+		LICENSE.md = LICENSE.md
 		README.md = README.md
 		THIRD-PARTY-NOTICES.md = THIRD-PARTY-NOTICES.md
 	EndProjectSection
