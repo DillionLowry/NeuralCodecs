@@ -1,5 +1,4 @@
-﻿using TorchSharp;
-using static TorchSharp.torch;
+﻿using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Utils;
 
@@ -36,7 +35,7 @@ public static class TensorExtensions
         }
 
         var n = tensor.size(dim);
-        shift = (int)((shift % n + n) % n); // Handle negative shifts
+        shift = (int)(((shift % n) + n) % n); // Handle negative shifts
 
         // Store the wrapped portion
         using var temp = tensor.narrow(dim, n - shift, shift).clone();
@@ -56,6 +55,37 @@ public static class TensorExtensions
     public static float[] ToFloatArray(this Tensor tensor)
     {
         return tensor.cpu().detach().to(float32).data<float>().ToArray();
+    }
+
+    /// <summary>
+    /// Creates a proper boolean mask from a condition
+    /// </summary>
+    public static Tensor ToMask(this Tensor condition)
+    {
+        return condition.to_type(ScalarType.Bool);
+    }
+
+    /// <summary>
+    /// Checks if the tensor is null or invalid.
+    /// </summary>
+    /// <param name="tensor"></param>
+    /// <returns>True if the tensor is null or invalid, false otherwise</returns>
+    public static bool IsNull(this Tensor tensor)
+    {
+        return tensor is null || tensor.IsInvalid;
+    }
+
+    /// <summary>
+    /// Determines whether the specified <see cref="Tensor"/> instance is not null and is valid.
+    /// </summary>
+    /// <remarks>A <see cref="Tensor"/> is considered valid if it is not <see langword="null"/> and its <see
+    /// cref="Tensor.IsInvalid"/> property is <see langword="false"/>.</remarks>
+    /// <param name="tensor">The <see cref="Tensor"/> instance to check.</param>
+    /// <returns><see langword="true"/> if the <paramref name="tensor"/> is not <see langword="null"/> and is valid; otherwise,
+    /// <see langword="false"/>.</returns>
+    public static bool IsNotNull(this Tensor tensor)
+    {
+        return tensor is not null && !tensor.IsInvalid;
     }
 
     public static void WriteTensorToFile(this Tensor tensor, string filePath, int precision = 30, bool append = false, int? count = 200)

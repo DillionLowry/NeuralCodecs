@@ -10,7 +10,7 @@
 	  <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 	  <Title>NeuralCodecs</Title>
 	  <PackageId>NeuralCodecs</PackageId>
-	  <Version>0.3.0</Version>
+	  <Version>0.4.0</Version>
 	  <Authors>Dillion Lowry</Authors>
 	  <Company></Company>
 	  <Description>Neural audio codec implementations in .NET.</Description>
@@ -24,6 +24,7 @@
 	  <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>	  
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	  <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>

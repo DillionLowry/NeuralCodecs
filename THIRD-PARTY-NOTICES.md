@@ -1,4 +1,14 @@
-﻿
+﻿License notice for Dia
+------------------------------------
+
+https://github.com/nari-labs/dia
+
+Copyright (c) 2025 Nari Labs
+
+Licensed under Apache-2.0
+
+Available at https://www.apache.org/licenses/LICENSE-2.0
+
 License notice for EnCodec
 ------------------------------------
 

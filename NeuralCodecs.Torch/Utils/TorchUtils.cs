@@ -1,4 +1,5 @@
 ﻿using NeuralCodecs.Core.Configuration;
+using TorchSharp;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 using DeviceType = NeuralCodecs.Core.Configuration.DeviceType;
@@ -46,6 +47,41 @@ public static class TorchUtils
     }
 
     /// <summary>
+    /// Performs interpolation on tensors.
+    /// </summary>
+    /// <param name="x">Input tensor for interpolation points</param>
+    /// <param name="xp">Known data points</param>
+    /// <param name="fp">Function values at known data points</param>
+    /// <param name="dim">Dimension along which to interpolate</param>
+    /// <param name="linear">Whether to use linear interpolation</param>
+    /// <returns>Interpolated values</returns>
+    public static Tensor Interp(Tensor x, Tensor xp, Tensor fp, long dim = -1, bool linear = true)
+    {
+        using var scope = torch.NewDisposeScope();
+        // Move the interpolation dimension to the last axis
+        x = x.movedim([dim], [-1]);
+        xp = xp.movedim([dim], [-1]);
+        fp = fp.movedim([dim], [-1]);
+        var offset = torch.diff(fp) / torch.diff(xp);
+        var slope = fp[TensorIndex.Ellipsis, ..^1] - (offset * xp[TensorIndex.Ellipsis, ..^1]);
+        var indices = torch.searchsorted(xp, x, right: false);
+
+        if (linear)
+        {
+            indices = torch.clamp(indices - 1, 0, offset.shape[^1] - 1);
+        }
+        else // constant
+        {
+            // Pad m and b to get constant values outside of xp range
+            offset = torch.cat([torch.zeros_like(offset)[TensorIndex.Ellipsis, ..1], offset, torch.zeros_like(offset)[TensorIndex.Ellipsis, ..1]], dim: -1);
+            slope = torch.cat([fp[TensorIndex.Ellipsis, ..1], slope, fp[TensorIndex.Ellipsis, ^1..]], dim: -1);
+        }
+
+        var values = (offset.gather(-1, indices) * x) + slope.gather(-1, indices);
+        return values.movedim([-1], [dim]).MoveToOuterDisposeScope();
+    }
+
+    /// <summary>
     /// Gets the torch device based on the provided device configuration.
     /// </summary>
     /// <param name="device">The device configuration.</param>
@@ -58,11 +94,11 @@ public static class TorchUtils
         {
             DeviceType.CPU => CPU,
 
-            DeviceType.CUDA when cuda.is_available() => CUDA,
+            DeviceType.CUDA when cuda.is_available() => new Device("CUDA", device.Index),
 
             DeviceType.CUDA => throw new InvalidOperationException("CUDA requested but not available"),
 
             _ => CPU
         };
-    }
+    }
 }

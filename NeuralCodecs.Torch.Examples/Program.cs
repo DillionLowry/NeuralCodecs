@@ -1,17 +1,25 @@
-﻿using NAudio.Wave;
+﻿using NAudio.Utils;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using NeuralCodecs.Core.Configuration;
-using NeuralCodecs.Core.Utils;
 using NeuralCodecs.Torch.AudioTools;
 using NeuralCodecs.Torch.Config.DAC;
+using NeuralCodecs.Torch.Config.Dia;
 using NeuralCodecs.Torch.Config.Encodec;
 using NeuralCodecs.Torch.Config.SNAC;
-using NeuralCodecs.Torch.Models;
 using NeuralCodecs.Torch.Modules.Encodec;
+using ScottPlot.TickGenerators.TimeUnits;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using TorchSharp;
 using static TorchSharp.torch;
+using static TorchSharp.torchaudio;
+using NeuralCodecs.Core.Utils;
+using NeuralCodecs.Torch.Utils;
+using NeuralCodecs.Torch.Models;
+using SkiaSharp;
 
 namespace NeuralCodecs.Torch.Examples
 {
@@ -19,24 +27,22 @@ namespace NeuralCodecs.Torch.Examples
     {
         private static async Task Main(string[] args)
         {
-            string outputAudioPath = "output.wav";
             while (true)
             {
+                string outputAudioPath = $"output_{DateTime.Now:ddmmss}.wav";
+
                 AnsiConsole.Clear();
                 AnsiConsole.Write(new FigletText("Neural Codecs").Centered().Color(Spectre.Console.Color.Blue));
-
-                var codec = AnsiConsole.Prompt(
+                var codec = await AnsiConsole.PromptAsync(
                     new SelectionPrompt<string>()
                         .Title("Choose your [green]codec[/]:")
                         .PageSize(5)
-                        .AddChoices("SNAC", "DAC", "Encodec", "Exit"));
+                        .AddChoices("SNAC", "DAC", "Encodec", "Dia TTS", "Exit"));
 
                 if (codec == "Exit")
-                {
                     break;
-                }
 
-                var sampleRate = AnsiConsole.Prompt(
+                var sampleRate = codec == "Dia TTS" ? "44.1khz" : await AnsiConsole.PromptAsync(
                     new SelectionPrompt<string>()
                         .Title($"Select sample rate for [green]{codec}[/]:")
                         .PageSize(5)
@@ -48,26 +54,20 @@ namespace NeuralCodecs.Torch.Examples
                             _ => Array.Empty<string>()
                         }));
 
-                var useCustomModel = AnsiConsole.Confirm("Would you like to use a custom model path?", defaultValue: false);
+                var useCustomModel = await AnsiConsole.ConfirmAsync("Would you like to use a custom model path?", defaultValue: false);
 
                 string modelPath;
                 if (useCustomModel)
                 {
-                    modelPath = AnsiConsole.Prompt(
+                    modelPath = await AnsiConsole.PromptAsync(
                         new TextPrompt<string>("Enter the path to your [green]model[/]:")
                             .ValidationErrorMessage("[red]Please enter a valid model path[/]")
                             .Validate(path =>
                             {
                                 if (string.IsNullOrEmpty(path))
-                                {
                                     return ValidationResult.Error("[red]Path cannot be empty[/]");
-                                }
-
                                 if (!Directory.Exists(path) && !File.Exists(path))
-                                {
                                     return ValidationResult.Error("[red]Model path does not exist[/]");
-                                }
-
                                 return ValidationResult.Success();
                             }));
                 }
@@ -84,10 +84,10 @@ namespace NeuralCodecs.Torch.Examples
                         ("DAC", "44.1khz-16kbps") => @"https://github.com/descriptinc/descript-audio-codec/",
                         ("Encodec", "24khz") => "facebook/encodec_24khz",
                         ("Encodec", "48khz") => "facebook/encodec_48khz",
+                        ("Dia TTS", _) => "nari-labs/Dia-1.6B",
                         _ => throw new InvalidDataException("Selection was invalid")
                     };
                 }
-
                 var config = (codec, sampleRate) switch
                 {
                     ("SNAC", "24khz") => (IModelConfig)SNACConfig.SNAC24kHz,
@@ -99,32 +99,49 @@ namespace NeuralCodecs.Torch.Examples
                     ("DAC", "44.1khz-16kbps") => (IModelConfig)DACConfig.DAC44kHz_16kbps,
                     ("Encodec", "24khz") => (IModelConfig)EncodecConfig.Encodec24Khz,
                     ("Encodec", "48khz") => (IModelConfig)EncodecConfig.Encodec48Khz,
+                    ("Dia TTS", _) => (IModelConfig)new DiaConfig(),
                     _ => throw new InvalidDataException("Selection was invalid")
-                };
+                }; 
+                
+                string filePath;
+                string textInput = "";
 
-                var filePath = AnsiConsole.Prompt(
-                    new TextPrompt<string>("Enter the path to your [green]WAV file[/]:")
-                        .ValidationErrorMessage("[red]Please enter a valid file path[/]")
-                        .Validate(path =>
-                        {
-                            if (string.IsNullOrEmpty(path))
+                if (codec == "Dia TTS")
+                {
+                    AnsiConsole.WriteLine("Voice annotations available (Can produce unpredictable results): (laughs), (clears throat), (sighs), (gasps), (coughs), (singing), (sings), (mumbles), (beep), (groans), (sniffs), (claps), (screams), (inhales), (exhales), (applause), (burps), (humming), (sneezes), (chuckle), (whistles)\n");
+                    AnsiConsole.WriteLine("Input expects two speakers denoted by \"[S1]\" and \"[S2]\" with at least 5 seconds of expected audio output\n");
+                    textInput = (await AnsiConsole.PromptAsync(
+                        new TextPrompt<string>("Enter the [green]text[/] you want to convert to speech:")
+                            .DefaultValue("[S1] Dia is an open weights text to dialogue model. [S2] You get full control over scripts and voices. [S1] Wow. Amazing. (laughs) [S2] Try it now on Git hub or Hugging Face.".EscapeMarkup())
+                            .ValidationErrorMessage("[red]Text cannot be empty[/]")
+                            .Validate(text =>
                             {
-                                return ValidationResult.Error("[red]Path cannot be empty[/]");
-                            }
-                            if (!File.Exists(path))
+                                if (string.IsNullOrWhiteSpace(text))
+                                    return ValidationResult.Error("[red]Text cannot be empty[/]");
+                                return ValidationResult.Success();
+                            })));
+                    // Use a placeholder path for output
+                    filePath = "not_used.wav";
+                }
+                else
+                {
+                    filePath = (await AnsiConsole.PromptAsync(
+                        new TextPrompt<string>("Enter the path to your [green]WAV file[/]:")
+                            .ValidationErrorMessage("[red]Please enter a valid file path[/]")
+                            .Validate(path =>
                             {
-                                return ValidationResult.Error("[red]File does not exist[/]");
-                            }
-
-                            if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-                            {
-                                return ValidationResult.Error("[red]File must be a WAV file[/]");
-                            }
-
-                            return ValidationResult.Success();
-                        }));
-
-                AnsiConsole.MarkupLine($"Encoding [blue]{Path.GetFileName(filePath)}[/] with [green]{codec}[/] at [green]{sampleRate}[/]");
+                                if (string.IsNullOrEmpty(path))
+                                {
+                                    return ValidationResult.Error("[red]Path cannot be empty[/]");
+                                }
+                                if (!File.Exists(path))
+                                    return ValidationResult.Error("[red]File does not exist[/]");
+                                if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+                                    return ValidationResult.Error("[red]File must be a WAV file[/]");
+                                return ValidationResult.Success();
+                            }))).EscapeMarkup();
+                }
+                AnsiConsole.MarkupLine($"Encoding [blue]{(codec == "Dia TTS" ? "text to speech" : Path.GetFileName(filePath))}[/] with [green]{codec}[/] at [green]{sampleRate}[/]");
 
                 try
                 {
@@ -139,14 +156,18 @@ namespace NeuralCodecs.Torch.Examples
                             {
                                 await DACEncodeDecode(modelPath, filePath, outputAudioPath, (DACConfig)config, ctx: ctx);
                             }
-                            else
+                            else if (codec == "Dia TTS")
+                            {
+                                await DiaTTS(modelPath, textInput, outputAudioPath, (DiaConfig)config, ctx);
+                            }
+                            else // Encodec
                             {
                                 await EncodecEncodeDecode(modelPath, filePath, outputAudioPath, (EncodecConfig)config, ctx);
                             }
                         });
                     AnsiConsole.MarkupLine("[green]Encoding completed successfully[/]");
                     AnsiConsole.WriteLine();
-                    if (AnsiConsole.Confirm("Would you like to visualize the audio?"))
+                    if (codec != "Dia TTS" && AnsiConsole.Confirm("Would you like to visualize the audio?"))
                     {
                         AnsiConsole.WriteLine();
 
@@ -171,9 +192,7 @@ namespace NeuralCodecs.Torch.Examples
                 AnsiConsole.WriteLine();
 
                 if (!AnsiConsole.Confirm("Would you like to encode another file?"))
-                {
                     break;
-                }
             }
 
             AnsiConsole.MarkupLine("[blue]Exiting...[/]");
@@ -191,7 +210,7 @@ namespace NeuralCodecs.Torch.Examples
                 _ => throw new NotImplementedException("Only mono and stereo are supported")
             };
 
-            tensor = tensor.to(model.device);
+            tensor = tensor.to(model.Device);
 
             await EncodecCompressor.CompressToFileAsync(model, tensor,
                 $"output_{khz}_{model.CurrentBandwidth}_compressed{(string.IsNullOrWhiteSpace(addToFilenames) ? "" : $"_{addToFilenames}")}.ecdc",
@@ -201,13 +220,19 @@ namespace NeuralCodecs.Torch.Examples
 
             var (waveform, sampleRate) = await EncodecCompressor.DecompressFromFileAsync(
                 $"output_{khz}_{model.CurrentBandwidth}_compressed{(string.IsNullOrWhiteSpace(addToFilenames) ? "" : $"_{addToFilenames}")}.ecdc",
-                model.device);
+                model.Device);
 
             SaveEncodecAudio(waveform, $"output_{khz}_{config.Bandwidth}_decompressed{(string.IsNullOrWhiteSpace(addToFilenames) ? "" : $"_{addToFilenames}")}.wav", sampleRate, rescale: false);
         }
 
         public static async Task SNACEncodeDecode(string modelPath, string inputPath, string outputPath, SNACConfig config, StatusContext? ctx = null)
         {
+            using var scope = NewDisposeScope();
+            if (cuda.is_available())
+            {
+                config.Device = DeviceConfiguration.CUDA();
+            }
+
             Report("Creating Model...", ctx);
             var model = await NeuralCodecs.CreateSNACAsync(modelPath, config);
 
@@ -226,6 +251,12 @@ namespace NeuralCodecs.Torch.Examples
 
         public static async Task DACEncodeDecode(string modelPath, string inputPath, string outputPath, DACConfig config, bool useAudioSignal = false, StatusContext? ctx = null)
         {
+            using var scope = NewDisposeScope();
+            if (cuda.is_available())
+            {
+                config.Device = DeviceConfiguration.CUDA();
+            }
+
             Report("Creating Model...", ctx);
             var model = await NeuralCodecs.CreateDACAsync(modelPath, config, null);
 
@@ -263,6 +294,12 @@ namespace NeuralCodecs.Torch.Examples
         {
             try
             {
+                using var scope = NewDisposeScope();
+                if (cuda.is_available())
+                {
+                    config.Device = DeviceConfiguration.CUDA();
+                }
+
                 Report("Creating Model...", ctx);
                 var model = await NeuralCodecs.CreateEncodecAsync(modelPath, config);
 
@@ -284,6 +321,36 @@ namespace NeuralCodecs.Torch.Examples
             }
         }
 
+        public static async Task DiaTTS(string modelPath, string textInput, string outputPath, DiaConfig config, StatusContext? ctx = null)
+        {
+            try
+            {
+                using var scope = NewDisposeScope();
+                if (cuda.is_available())
+                {
+                    config.Device = DeviceConfiguration.CUDA();
+                }
+                // Remove escape chars added for Spectre console
+                textInput = textInput.Replace("[[", "[").Replace("]]", "]");
+
+                Report("Creating Dia TTS Model...", ctx);
+                var model = await NeuralCodecs.CreateDiaAsync(modelPath, config);
+
+                Report($"Converting text to speech: \"{textInput.EscapeMarkup()}\"", ctx);
+                var audio = model.Generate(textInput);
+
+                Report("Saving generated audio...", ctx);
+                Dia.SaveAudio(outputPath, audio);
+
+                Report($"Text-to-speech completed successfully. Output saved to {outputPath}", ctx);
+            }
+            catch (Exception ex)
+            {
+                Report($"Error during TTS generation: {ex.Message}", ctx);
+                Report($"Stack Trace: {ex.StackTrace}", ctx);
+                throw;
+            }
+        }
         #region Audio Loading and Saving
 
         public static float[] LoadAndDeinterleaveWav(string filePath, int targetSampleRate, int bitDepth = 16)
@@ -294,63 +361,63 @@ namespace NeuralCodecs.Torch.Examples
             }
 
             using var reader = new WaveFileReader(filePath);
-            if (reader.WaveFormat.Channels != 2)
-            {
-                throw new ArgumentException("Input file must be stereo (2 channels)");
-            }
-
-            if (reader.WaveFormat.BitsPerSample != bitDepth)
-            {
-                throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
-            }
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
-            {
-                throw new NotImplementedException("Encodec stereo resampling is not implemented");
-            }
-
-            int bytesPerSample = bitDepth / 8;
-            long totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
-            float[] result = new float[totalSamplesPerChannel * 2];
-
-            byte[] audioData = new byte[reader.Length];
-
-            if (reader.Read(audioData, 0, audioData.Length) == 0)
-            {
-                throw new ArgumentException("Input file is empty");
-            }
-
-            if (bitDepth == 16)
-            {
-                // convert value range -32768 to 32767 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
+                if (reader.WaveFormat.Channels != 2)
                 {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    short leftSample = BitConverter.ToInt16(audioData, leftOffset);
-                    result[i] = leftSample / 32768f;
-
-                    // Get right channel sample and convert to float
-                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    short rightSample = BitConverter.ToInt16(audioData, rightOffset);
-                    result[i + totalSamplesPerChannel] = rightSample / 32768f;
+                    throw new ArgumentException("Input file must be stereo (2 channels)");
                 }
-            }
-            else
-            {
-                // Convert value range -2147483648 to 2147483647 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
+
+                if (reader.WaveFormat.BitsPerSample != bitDepth)
                 {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    int leftSample = BitConverter.ToInt32(audioData, leftOffset);
-                    result[i] = leftSample / 2147483648f;
+                    throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
+                }
+                if (reader.WaveFormat.SampleRate != targetSampleRate)
+                {
+                    throw new NotImplementedException("Encodec stereo resampling is not implemented");
+                }
+
+                int bytesPerSample = bitDepth / 8;
+                long totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
+                float[] result = new float[totalSamplesPerChannel * 2];
+
+                byte[] audioData = new byte[reader.Length];
+
+                if (reader.Read(audioData, 0, audioData.Length) == 0)
+                {
+                    throw new ArgumentException("Input file is empty");
+                }
+
+                if (bitDepth == 16)
+                {
+                    // convert value range -32768 to 32767 => -1.0 to 1.0
+                    for (long i = 0; i < totalSamplesPerChannel; i++)
+                    {
+                        int leftOffset = (int)(i * 2 * bytesPerSample);
+                        short leftSample = BitConverter.ToInt16(audioData, leftOffset);
+                        result[i] = leftSample / 32768f;
+
+                        // Get right channel sample and convert to float
+                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
+                        short rightSample = BitConverter.ToInt16(audioData, rightOffset);
+                        result[i + totalSamplesPerChannel] = rightSample / 32768f;
+                    }
+                }
+                else
+                {
+                    // Convert value range -2147483648 to 2147483647 => -1.0 to 1.0
+                    for (long i = 0; i < totalSamplesPerChannel; i++)
+                    {
+                        int leftOffset = (int)(i * 2 * bytesPerSample);
+                        int leftSample = BitConverter.ToInt32(audioData, leftOffset);
+                        result[i] = leftSample / 2147483648f;
 
                     int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    int rightSample = BitConverter.ToInt32(audioData, rightOffset);
-                    result[i + totalSamplesPerChannel] = rightSample / 2147483648f;
+                        int rightSample = BitConverter.ToInt32(audioData, rightOffset);
+                        result[i + totalSamplesPerChannel] = rightSample / 2147483648f;
+                    }
                 }
-            }
 
-            return result;
-        }
+                return result;
+            }
 
         public static float[,] LoadAndDeinterleaveWavMultidimensional(string filePath, int targetSampleRate, int bitDepth = 16)
         {
@@ -360,63 +427,63 @@ namespace NeuralCodecs.Torch.Examples
             }
 
             using var reader = new WaveFileReader(filePath);
-            if (reader.WaveFormat.Channels != 2)
-            {
-                throw new ArgumentException("Input file must be stereo (2 channels)");
-            }
-
-            if (reader.WaveFormat.BitsPerSample != bitDepth)
-            {
-                throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
-            }
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
-            {
-                throw new NotImplementedException("Encodec stereo resampling is not implemented");
-            }
-
-            int bytesPerSample = bitDepth / 8;
-            long totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
-            float[,] result = new float[2, totalSamplesPerChannel];
-
-            byte[] audioData = new byte[reader.Length];
-
-            if (reader.Read(audioData, 0, audioData.Length) == 0)
-            {
-                throw new ArgumentException("Input file is empty");
-            }
-
-            if (bitDepth == 16)
-            {
-                // convert value range -32768 to 32767 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
+                if (reader.WaveFormat.Channels != 2)
                 {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    short leftSample = BitConverter.ToInt16(audioData, leftOffset);
-                    result[0, i] = leftSample / 32768f;
-
-                    // Get right channel sample and convert to float
-                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    short rightSample = BitConverter.ToInt16(audioData, rightOffset);
-                    result[1, i] = rightSample / 32768f;
+                    throw new ArgumentException("Input file must be stereo (2 channels)");
                 }
-            }
-            else
-            {
-                // Convert value range -2147483648 to 2147483647 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
+
+                if (reader.WaveFormat.BitsPerSample != bitDepth)
                 {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    int leftSample = BitConverter.ToInt32(audioData, leftOffset);
-                    result[0, i] = leftSample / 2147483648f;
+                    throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
+                }
+                if (reader.WaveFormat.SampleRate != targetSampleRate)
+                {
+                    throw new NotImplementedException("Encodec stereo resampling is not implemented");
+                }
+
+                int bytesPerSample = bitDepth / 8;
+                long totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
+                float[,] result = new float[2, totalSamplesPerChannel];
+
+                byte[] audioData = new byte[reader.Length];
+
+                if (reader.Read(audioData, 0, audioData.Length) == 0)
+                {
+                    throw new ArgumentException("Input file is empty");
+                }
+
+                if (bitDepth == 16)
+                {
+                    // convert value range -32768 to 32767 => -1.0 to 1.0
+                    for (long i = 0; i < totalSamplesPerChannel; i++)
+                    {
+                        int leftOffset = (int)(i * 2 * bytesPerSample);
+                        short leftSample = BitConverter.ToInt16(audioData, leftOffset);
+                        result[0, i] = leftSample / 32768f;
+
+                        // Get right channel sample and convert to float
+                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
+                        short rightSample = BitConverter.ToInt16(audioData, rightOffset);
+                        result[1, i] = rightSample / 32768f;
+                    }
+                }
+                else
+                {
+                    // Convert value range -2147483648 to 2147483647 => -1.0 to 1.0
+                    for (long i = 0; i < totalSamplesPerChannel; i++)
+                    {
+                        int leftOffset = (int)(i * 2 * bytesPerSample);
+                        int leftSample = BitConverter.ToInt32(audioData, leftOffset);
+                        result[0, i] = leftSample / 2147483648f;
 
                     int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    int rightSample = BitConverter.ToInt32(audioData, rightOffset);
-                    result[1, i] = rightSample / 2147483648f;
+                        int rightSample = BitConverter.ToInt32(audioData, rightOffset);
+                        result[1, i] = rightSample / 2147483648f;
+                    }
                 }
-            }
 
-            return result;
-        }
+                return result;
+            }
 
         public static void InterleaveAndSaveAudio(Tensor audioTensor, string outputPath, int channels, int sampleRate)
         {
@@ -652,47 +719,6 @@ namespace NeuralCodecs.Torch.Examples
             {
                 ctx.Status(output);
             }
-        }
-
-        public static List<float> ConvertToMono(List<float> input, int channels)
-        {
-            var monoBuffer = new List<float>();
-            for (int i = 0; i < input.Count; i += channels)
-            {
-                float sum = 0;
-                for (int ch = 0; ch < channels; ch++)
-                {
-                    sum += input[i + ch];
-                }
-                monoBuffer.Add(sum / channels);
-            }
-            return monoBuffer;
-        }
-
-        private static float[] Resample(float[] input, int sourceSampleRate, int targetSampleRate)
-        {
-            var ratio = (double)targetSampleRate / sourceSampleRate;
-            var outputLength = (int)(input.Length * ratio);
-            var output = new float[outputLength];
-
-            for (int i = 0; i < outputLength; i++)
-            {
-                var position = i / ratio;
-                var index = (int)position;
-                var fraction = position - index;
-
-                if (index >= input.Length - 1)
-                {
-                    output[i] = input[input.Length - 1];
-                }
-                else
-                {
-                    output[i] = (float)(((1 - fraction) * input[index]) +
-                               (fraction * input[index + 1]));
-                }
-            }
-
-            return output;
         }
 
         // Helper method to validate the audio content
