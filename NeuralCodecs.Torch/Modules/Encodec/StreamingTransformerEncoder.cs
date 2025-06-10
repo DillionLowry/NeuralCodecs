@@ -125,6 +125,7 @@ public class StreamingTransformerEncoder : Module<Tensor, (Tensor output, List<T
         return (output.MoveToOuterDisposeScope(), newStates, offset + timeSteps);
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

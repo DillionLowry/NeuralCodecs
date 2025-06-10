@@ -13,7 +13,7 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor codes, T
     private readonly float _commitmentWeight;
     private readonly float _epsilon;
     private readonly EuclideanCodebook codebook;
-    private readonly Linear projectIn; // TODO rename?
+    private readonly Linear projectIn;
     private readonly Linear projectOut;
 
     public VectorQuantizer(
@@ -114,6 +114,7 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor codes, T
         );
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

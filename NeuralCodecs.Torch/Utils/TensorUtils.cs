@@ -58,6 +58,17 @@ public static class TensorUtils
     }
 
     /// <summary>
+    /// Logs tensor shape information to the console and writes tensor data to a file.
+    /// </summary>
+    /// <param name="tensor">The tensor to log.</param>
+    /// <param name="name">Name identifier for the tensor in logs and filename.</param>
+    public static void LogTensor(Tensor tensor, string name, int precision = 10, int count = 1500)
+    {
+        Console.WriteLine($"{name} shape: {string.Join(", ", tensor.shape)}");
+        tensor.WriteTensorToFile($"{name}.txt", precision, count: count);
+    }
+
+    /// <summary>
     /// Performs padding for 1D tensors with special handling for reflection padding
     /// </summary>
     /// <param name="x">Input tensor</param>

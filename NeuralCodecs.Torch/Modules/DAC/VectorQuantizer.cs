@@ -27,8 +27,6 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
     /// </summary>
     private readonly Embedding codebook;
 
-    private bool _disposed;
-
     /// <summary>
     /// Gets the dimension of the codebook.
     /// </summary>
@@ -106,15 +104,15 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
         var shape = latents.shape;
         var encodings = latents.transpose(1, 2).reshape(-1, CodebookDim).to(float32).contiguous();
 
-        var codebookWeight = codebook.weight?.to(float32).contiguous() ?? throw new InvalidOperationException("Codebook weight is null");
+        var codebookWeight = codebook.weight?.to(float32).contiguous()
+            ?? throw new InvalidOperationException("Codebook weight is null");
 
         // L2 normalize both encodings and codebook
         var encodingsSquared = encodings.pow(2).sum(1, keepdim: true);
         var codebookSquared = codebookWeight.pow(2).sum(1, keepdim: true);
 
         // Compute cross terms with einsum
-        var crossTerms = einsum("bd,nd->bn", encodings, codebookWeight);
-        crossTerms = crossTerms.mul_(2.0f);
+        var crossTerms = einsum("bd,nd->bn", encodings, codebookWeight).mul_(2.0f);
 
         // Compute distances
         var dist = encodingsSquared + codebookSquared.t() - crossTerms;
@@ -137,6 +135,7 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
     public Tensor DecodeCode(Tensor indices)
     {
         using var scope = NewDisposeScope();
+
         // Look up embeddings and reshape
         var embeddings = codebook.forward(indices).contiguous();
         return embeddings.transpose(-2, -1).contiguous().MoveToOuterDisposeScope();
@@ -144,22 +143,12 @@ public class VectorQuantizer : Module<Tensor, (Tensor quantized, Tensor commitme
 
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
-            if (disposing)
-            {
-                in_proj?.Dispose();
-                out_proj?.Dispose();
-                codebook?.Dispose();
-            }
-            base.Dispose(disposing);
-            _disposed = true;
+            in_proj?.Dispose();
+            out_proj?.Dispose();
+            codebook?.Dispose();
         }
-    }
-
-    public void Dispose()
-    {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+        base.Dispose(disposing);
     }
 }

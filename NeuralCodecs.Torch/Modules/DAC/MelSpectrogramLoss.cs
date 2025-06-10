@@ -1,5 +1,5 @@
 using NeuralCodecs.Torch.AudioTools;
-using NeuralCodecs.Torch.Utils;
+using TorchSharp;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
@@ -115,6 +115,7 @@ public class MelSpectrogramLoss : AudioLossBase
 
     public override Tensor forward(Tensor x, Tensor y)
     {
+        using var scope = torch.NewDisposeScope();
         var loss = zeros(1, device: x.device);
 
         for (int i = 0; i < _stftParams.Length; i++)
@@ -132,7 +133,7 @@ public class MelSpectrogramLoss : AudioLossBase
             loss += _magWeight * _lossFn.forward(xMels, yMels);
         }
 
-        return loss * _weight;
+        return loss.mul_(_weight).MoveToOuterDisposeScope();
     }
 
     protected override void Dispose(bool disposing)

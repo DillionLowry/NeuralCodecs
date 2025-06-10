@@ -30,13 +30,13 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     private readonly int _sampleRate;
     private readonly int _hopLength;
     private torch.Device _device => TorchUtils.GetDevice(_config.Device);
-
     private readonly Encoder encoder;
     private readonly ResidualVectorQuantizer quantizer;
     private readonly Decoder decoder;
 
     private DACConfig _config;
     public IModelConfig Config => _config;
+    public ResidualVectorQuantizer Quantizer => quantizer;
 
     /// <summary>
     /// Initializes a new instance of the DAC model.
@@ -93,6 +93,19 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     }
 
     /// <summary>
+    /// Decodes quantized codes back into audio waveform.
+    /// This method reconstructs audio from previously encoded discrete codes using the quantizer's decoder.
+    /// </summary>
+    /// <param name="codes">Tensor containing the quantized codes to decode. Shape should be compatible with the quantizer's expected input format.</param>
+    /// <returns>Reconstructed audio tensor in the original audio domain.</returns>
+    public Tensor FromCodes(Tensor codes)
+    {
+        using var inference = torch.inference_mode();
+        var (audio, _, _) = quantizer.FromCodes(codes);
+        return audio.MoveToOuterDisposeScope();
+    }
+
+    /// <summary>
     /// Initializes the model's weights using Kaiming normal initialization.
     /// </summary>
     private void InitializeWeights()
@@ -103,13 +116,17 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             {
                 init.kaiming_normal_(conv.weight);
                 if (conv.bias is not null)
+                {
                     init.zeros_(conv.bias);
+                }
             }
             else if (module is ConvTranspose1d convT)
             {
                 init.kaiming_normal_(convT.weight);
                 if (convT.bias is not null)
+                {
                     init.zeros_(convT.bias);
+                }
             }
         }
     }
@@ -147,9 +164,10 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         Encode(Tensor audioData, int? nQuantizers = null, int? sampleRate = null)
     {
         using var scope = NewDisposeScope();
+        using var inferenceScope = torch.inference_mode();
 
-        audioData = Preprocess(audioData, sampleRate);
-        var z = encoder.forward(audioData);
+        var processed = Preprocess(audioData, sampleRate);
+        var z = encoder.forward(processed);
         var (zQ, codes, latents, commitmentLoss, codebookLoss) =
             quantizer.forward(z, nQuantizers);
 
@@ -161,17 +179,22 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
             codebookLoss.MoveToOuterDisposeScope()
         );
     }
+
+    /// <summary>
+    /// Encodes the input audio data through the encoder and quantizer.
+    /// </summary>
+    /// <param name="audioData">Input audio tensor.</param>
+    /// <returns>Quantized audio tensor.</returns>
     public Tensor EncodeAudio(Tensor audioData)
     {
         using var scope = NewDisposeScope();
+        using var inferenceScope = torch.inference_mode();
 
-        audioData = Preprocess(audioData, _sampleRate);
-        var z = encoder.forward(audioData);
-        var (zQ, _, _, _, _) =
-            quantizer.forward(z, null);
+        var processed = Preprocess(audioData, _sampleRate);
+        var z = encoder.forward(processed);
+        var (zQ, _, _, _, _) = quantizer.forward(z, null);
 
         return zQ.MoveToOuterDisposeScope();
-        
     }
 
     /// <summary>
@@ -184,6 +207,7 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         ArgumentNullException.ThrowIfNull(audioData);
 
         using var scope = torch.NewDisposeScope();
+        using var inferenceScope = torch.inference_mode();
 
         // Convert input audio data to tensor
         var inputTensor = torch.tensor(audioData, dtype: torch.float32, _device)
@@ -241,10 +265,11 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         int? nQuantizers)
     {
         using var scope = NewDisposeScope();
-        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData, sampleRate, nQuantizers);
+
+        var (z, codes, latents, commitmentLoss, codebookLoss) = Encode(audioData, nQuantizers, sampleRate);
         var audio = Decode(z);
 
-        return new Dictionary<string, Tensor> //TODO NAME
+        return new Dictionary<string, Tensor>
         {
             ["audio"] = audio.MoveToOuterDisposeScope(),
             ["z"] = z.MoveToOuterDisposeScope(),
@@ -311,14 +336,6 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
         base.Dispose(disposing);
     }
 
-    private static string GetRelativePath(string fullPath, string basePath)
-    {
-        var fullUri = new Uri(fullPath);
-        var baseUri = new Uri(basePath);
-        var relativeUri = baseUri.MakeRelativeUri(fullUri);
-        return Uri.UnescapeDataString(relativeUri.ToString());
-    }
-
     /// <summary>
     /// Loads the model weights from the specified file path.
     /// </summary>
@@ -328,10 +345,21 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
     public void LoadWeights(string path)
     {
         if (!File.Exists(path))
+        {
             throw new FileNotFoundException($"DAC weights not found at {path}");
+        }
 
         try
         {
+            set_default_device(CPU);
+            if (_device != CPU)
+            {
+                using (no_grad())
+                {
+                    this.to(CPU);
+                }
+            }
+
             switch (FileUtils.DetectFileType(path))
             {
                 case ModelFileType.Checkpoint:
@@ -343,6 +371,15 @@ public class DAC : Module<Tensor, Dictionary<string, Tensor>>, INeuralCodec
                     this.load_state_dict(modelDict.StateDict);
                     _config ??= config;
                     break;
+            }
+
+            if (_device != CPU)
+            {
+                using (no_grad())
+                {
+                    this.to(_device);
+                    set_default_device(_device);
+                }
             }
         }
         catch (Exception ex) when (ex is not (FileNotFoundException or InvalidOperationException))

@@ -12,7 +12,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		LICENSE.txt = LICENSE.txt
 		nc_logo.png = nc_logo.png
 		README.md = README.md
-		THIRD-PARTY-NOTICES.TXT = THIRD-PARTY-NOTICES.TXT
+		THIRD-PARTY-NOTICES.md = THIRD-PARTY-NOTICES.md
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NeuralCodecs.Torch.Examples", "NeuralCodecs.Torch.Examples\NeuralCodecs.Torch.Examples.csproj", "{BE93E11F-D3AA-45DA-928A-A24393688D15}"
@@ -20,21 +20,35 @@ EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{33D413AE-C258-497F-8058-EE5AD936C450}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{33D413AE-C258-497F-8058-EE5AD936C450}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33D413AE-C258-497F-8058-EE5AD936C450}.Debug|x64.ActiveCfg = Debug|x64
+		{33D413AE-C258-497F-8058-EE5AD936C450}.Debug|x64.Build.0 = Debug|x64
 		{33D413AE-C258-497F-8058-EE5AD936C450}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{33D413AE-C258-497F-8058-EE5AD936C450}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33D413AE-C258-497F-8058-EE5AD936C450}.Release|x64.ActiveCfg = Release|x64
+		{33D413AE-C258-497F-8058-EE5AD936C450}.Release|x64.Build.0 = Release|x64
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Debug|x64.ActiveCfg = Debug|x64
+		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Debug|x64.Build.0 = Debug|x64
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|x64.ActiveCfg = Release|x64
+		{3549FA01-CD21-4465-8816-A2BEAAE391D7}.Release|x64.Build.0 = Release|x64
 		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|x64.ActiveCfg = Debug|x64
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Debug|x64.Build.0 = Debug|x64
 		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|x64.ActiveCfg = Release|x64
+		{BE93E11F-D3AA-45DA-928A-A24393688D15}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

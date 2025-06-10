@@ -1,15 +1,47 @@
-﻿using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
-
-namespace NeuralCodecs.Core.Utils
+﻿namespace NeuralCodecs.Core.Utils
 {
     public static class AudioUtils
     {
-        private static Func<string, WaveFileReader> _readerFactory = path => new WaveFileReader(path);
+        /// <summary>
+        /// Converts 16 or 32-bit PCM byte array to float array
+        /// </summary>
+        /// <param name="audioData">The PCM audio data as a byte array</param>
+        /// <param name="bitDepth">The bit depth of the audio (16 or 32)</param>
+        /// <param name="totalSamples">Total number of samples in the audio data</param>
+        /// <param name="channels">Number of audio channels</param>
+        /// <returns>Audio data as a normalized float array</returns>
+        public static float[] AudioBytesToFloatArray(byte[] audioData, int bitDepth, long totalSamples, int channels)
+        {
+            var result = new float[totalSamples];
+
+            if (bitDepth == 16)
+            {
+                const float scale = 1.0f / 32768.0f;
+                for (long i = 0; i < totalSamples; i++)
+                {
+                    int offset = (int)(i * 2);
+                    result[i] = BitConverter.ToInt16(audioData, offset) * scale;
+                }
+            }
+            else // 32-bit
+            {
+                const float scale = 1.0f / 2147483648.0f;
+                for (long i = 0; i < totalSamples; i++)
+                {
+                    int offset = (int)(i * 4);
+                    result[i] = BitConverter.ToInt32(audioData, offset) * scale;
+                }
+            }
+
+            return result;
+        }
 
         /// <summary>
         /// Converts multi-channel audio to mono by averaging channels
         /// </summary>
+        /// <param name="input">Multi-channel audio data</param>
+        /// <param name="channels">Number of channels in the input audio</param>
+        /// <returns>Mono audio data with averaged channels</returns>
         public static float[] ConvertToMono(float[] input, int channels)
         {
             var monoLength = input.Length / channels;
@@ -32,6 +64,9 @@ namespace NeuralCodecs.Core.Utils
         /// <summary>
         /// Converts a list of multi-channel audio samples to mono
         /// </summary>
+        /// <param name="input">Multi-channel audio data as a list</param>
+        /// <param name="channels">Number of channels in the input audio</param>
+        /// <returns>Mono audio data with averaged channels as a list</returns>
         public static List<float> ConvertToMono(List<float> input, int channels)
         {
             var monoBuffer = new List<float>(input.Count / channels);
@@ -50,6 +85,8 @@ namespace NeuralCodecs.Core.Utils
         /// <summary>
         /// Converts deinterleaved stereo audio to interleaved format (LRLRLRLR...)
         /// </summary>
+        /// <param name="deinterleavedData">Deinterleaved stereo audio data (left channel followed by right channel)</param>
+        /// <returns>Interleaved stereo audio data in LRLRLR format</returns>
         public static float[] DeinterleaveToInterleave(float[] deinterleavedData)
         {
             var samplesPerChannel = deinterleavedData.Length / 2;
@@ -71,7 +108,7 @@ namespace NeuralCodecs.Core.Utils
         /// <returns>Deinterleaved byte array</returns>
         public static byte[] DeinterleaveWavFile(string inputFilePath)
         {
-            using var reader = CreateReader(inputFilePath);
+            using var reader = NAudioUtils.CreateReader(inputFilePath);
 
             // Ensure we have a stereo file
             if (reader.WaveFormat.Channels != 2)
@@ -88,7 +125,7 @@ namespace NeuralCodecs.Core.Utils
 
             // Create buffer for reading the original file
             byte[] originalData = new byte[reader.Length];
-            if (reader.Read(originalData, 0, originalData.Length)==0)
+            if (reader.Read(originalData, 0, originalData.Length) == 0)
             {
                 throw new ArgumentException("Input file is empty");
             }
@@ -125,8 +162,45 @@ namespace NeuralCodecs.Core.Utils
         }
 
         /// <summary>
+        /// Converts float array to PCM byte array with specified bit depth
+        /// </summary>
+        /// <param name="audioData">Audio data as normalized float array</param>
+        /// <param name="bitDepth">Target bit depth (16 or 32)</param>
+        /// <param name="channels">Number of audio channels</param>
+        /// <returns>PCM audio data as byte array</returns>
+        /// <exception cref="ArgumentException">Thrown when bit depth is not 16 or 32</exception>
+        public static byte[] FloatArrayToAudioBytes(float[] audioData, int bitDepth, int channels)
+        {
+            if (bitDepth is not 16 and not 32)
+            {
+                throw new ArgumentException("Bit depth must be either 16 or 32");
+            }
+            var bytesPerSample = bitDepth / 8;
+            var byteArray = new byte[audioData.Length * bytesPerSample];
+            if (bitDepth == 16)
+            {
+                for (int i = 0; i < audioData.Length; i++)
+                {
+                    short sample = (short)(audioData[i] * short.MaxValue);
+                    Buffer.BlockCopy(BitConverter.GetBytes(sample), 0, byteArray, i * bytesPerSample, bytesPerSample);
+                }
+            }
+            else // 32-bit
+            {
+                for (int i = 0; i < audioData.Length; i++)
+                {
+                    int sample = (int)(audioData[i] * int.MaxValue);
+                    Buffer.BlockCopy(BitConverter.GetBytes(sample), 0, byteArray, i * bytesPerSample, bytesPerSample);
+                }
+            }
+            return byteArray;
+        }
+
+        /// <summary>
         /// Converts interleaved stereo audio to deinterleaved format (LLLLL...RRRRR...)
         /// </summary>
+        /// <param name="interleavedData">Interleaved stereo audio data in LRLRLR format</param>
+        /// <returns>Deinterleaved stereo audio data (left channel followed by right channel)</returns>
         public static float[] InterleaveToDeinterleave(float[] interleavedData)
         {
             var samplesPerChannel = interleavedData.Length / 2;
@@ -140,19 +214,26 @@ namespace NeuralCodecs.Core.Utils
 
             return result;
         }
+
+        /// <summary>
+        /// Converts interleaved audio data to a 2D array format for processing
+        /// </summary>
+        /// <param name="interleavedData">Interleaved audio data</param>
+        /// <returns>2D array where first dimension represents channels and second represents samples</returns>
         public static float[,] InterleaveToDeinterleave2d(float[] interleavedData)
         {
-            var samplesPerChannel = interleavedData.Length ;
+            var samplesPerChannel = interleavedData.Length;
             float[,] result = new float[2, samplesPerChannel];
 
-            for (int i = 0; i < samplesPerChannel-1; i++)
+            for (int i = 0; i < samplesPerChannel - 1; i++)
             {
-                result[0, i]= interleavedData[i];
+                result[0, i] = interleavedData[i];
                 result[1, i] = interleavedData[i + 1];
             }
 
             return result;
         }
+
         /// <summary>
         /// Applies layer normalization to the input array across the channel dimension.
         /// </summary>
@@ -198,121 +279,6 @@ namespace NeuralCodecs.Core.Utils
         }
 
         /// <summary>
-        /// Loads audio from a file and converts it to float array format
-        /// </summary>
-        /// <param name="path">Path to the audio file</param>
-        /// <param name="targetSampleRate">Desired sample rate, will resample if needed</param>
-        /// <param name="format">Format of the output data (interleaved or deinterleaved)</param>
-        /// <param name="mono">Whether to convert to mono (single channel)</param>
-        /// <param name="bitDepth">Bit depth (16 or 32)</param>
-        /// <returns>Audio data as float array with values from -1.0 to 1.0</returns>
-        public static float[] LoadAudio(string path, int targetSampleRate,
-            AudioInterleaving format = AudioInterleaving.Deinterleaved, bool mono = true, int bitDepth = 16)
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                throw new FileNotFoundException("Input file does not exist", path);
-            }
-
-            using var reader = CreateReader(path);
-            return LoadAudioFromReader(reader, targetSampleRate, format, mono, bitDepth);
-        }
-
-        /// <summary>
-        /// Loads stereo audio from a file into a float array
-        /// </summary>
-        /// <param name="path">Path to the audio file</param>
-        /// <param name="targetSampleRate">Desired sample rate</param>
-        /// <param name="format">Format of the output data (interleaved or deinterleaved)</param>
-        /// <param name="bitDepth">Bit depth (16 or 32)</param>
-        /// <returns>Stereo audio data as float array</returns>
-        public static float[] LoadStereoAudio(string path, int targetSampleRate,
-            AudioInterleaving format = AudioInterleaving.Interleaved, int bitDepth = 16)
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                throw new FileNotFoundException("Input file does not exist", path);
-            }
-
-            using var reader = CreateReader(path);
-            return LoadStereoAudioFromReader(reader, targetSampleRate, format, bitDepth);
-        }
-
-        /// <summary>
-        /// Loads stereo audio in deinterleaved format to a multidimensional array [channel, sample]
-        /// </summary>
-        /// <param name="filePath">Path to the audio file</param>
-        /// <param name="targetSampleRate">Desired sample rate</param>
-        /// <param name="bitDepth">Bit depth (16 or 32)</param>
-        /// <returns>Stereo audio as [2, samples] float array</returns>
-        public static float[,] LoadStereoAudioMultidimensional(string filePath, int targetSampleRate, int bitDepth = 16)
-        {
-            if (bitDepth is not 16 and not 32)
-            {
-                throw new ArgumentException("Bit depth must be either 16 or 32");
-            }
-
-            using var reader = CreateReader(filePath);
-
-            if (reader.WaveFormat.Channels != 2)
-            {
-                throw new ArgumentException("Input file must be stereo (2 channels)");
-            }
-
-            if (reader.WaveFormat.BitsPerSample != bitDepth)
-            {
-                throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
-            }
-
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
-            {
-                throw new NotImplementedException("Resampling for multidimensional stereo is not implemented");
-            }
-
-            int bytesPerSample = bitDepth / 8;
-            long totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
-            float[,] result = new float[2, (int)totalSamplesPerChannel];
-
-            byte[] audioData = new byte[reader.Length];
-            if (reader.Read(audioData, 0, audioData.Length) == 0)
-            {
-                throw new ArgumentException("Input file is empty");
-            }
-
-            if (bitDepth == 16)
-            {
-                // Convert value range -32768 to 32767 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
-                {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    short leftSample = BitConverter.ToInt16(audioData, leftOffset);
-                    result[0, (int)i] = leftSample / 32768f;
-
-                    // Get right channel sample and convert to float
-                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    short rightSample = BitConverter.ToInt16(audioData, rightOffset);
-                    result[1, (int)i] = rightSample / 32768f;
-                }
-            }
-            else
-            {
-                // Convert value range -2147483648 to 2147483647 => -1.0 to 1.0
-                for (long i = 0; i < totalSamplesPerChannel; i++)
-                {
-                    int leftOffset = (int)(i * 2 * bytesPerSample);
-                    int leftSample = BitConverter.ToInt32(audioData, leftOffset);
-                    result[0, (int)i] = leftSample / 2147483648f;
-
-                    int rightOffset = (int)((i * 2 * bytesPerSample) + bytesPerSample);
-                    int rightSample = BitConverter.ToInt32(audioData, rightOffset);
-                    result[1, (int)i] = rightSample / 2147483648f;
-                }
-            }
-
-            return result;
-        }
-
-        /// <summary>
         /// Applies statistical normalization to standardize the input array.
         /// </summary>
         /// <param name="input">Array to normalize.</param>
@@ -353,6 +319,10 @@ namespace NeuralCodecs.Core.Utils
         /// <summary>
         /// Performs linear interpolation resampling
         /// </summary>
+        /// <param name="input">Input audio data to resample</param>
+        /// <param name="sourceSampleRate">Original sample rate in Hz</param>
+        /// <param name="targetSampleRate">Target sample rate in Hz</param>
+        /// <returns>Resampled audio data</returns>
         /// <remarks>
         /// This is a simpler but lower quality resampler than WDL
         /// </remarks>
@@ -370,7 +340,7 @@ namespace NeuralCodecs.Core.Utils
 
                 if (index >= input.Length - 1)
                 {
-                    output[i] = input[input.Length - 1];
+                    output[i] = input[^1];
                 }
                 else
                 {
@@ -403,231 +373,6 @@ namespace NeuralCodecs.Core.Utils
             }
 
             return input.ToArray(); // Since we're working with flat arrays
-        }
-
-        /// <summary>
-        /// Saves audio data to a WAV file
-        /// </summary>
-        /// <param name="path">Output file path</param>
-        /// <param name="buffer">Audio data as float array</param>
-        /// <param name="sampleRate">Sample rate in Hz</param>
-        /// <param name="channels">Number of channels</param>
-        /// <param name="format">Format of the input data (interleaved or deinterleaved)</param>
-        /// <param name="bitDepth">Bit depth (16 or 32)</param>
-        public static void SaveAudio(string path, float[] buffer, int sampleRate, int channels,
-            AudioInterleaving format = AudioInterleaving.Interleaved, int bitDepth = 16)
-        {
-            if (buffer == null)
-            {
-                throw new ArgumentNullException(nameof(buffer));
-            }
-
-            if (channels <= 0)
-            {
-                throw new ArgumentException("Channel count must be greater than 0", nameof(channels));
-            }
-
-            if (bitDepth is not 16 and not 32)
-            {
-                throw new ArgumentException("Bit depth must be either 16 or 32");
-            }
-
-            if (channels == 2 && format == AudioInterleaving.Deinterleaved)
-            {
-                buffer = DeinterleaveToInterleave(buffer);
-            }
-
-            var waveFormat = bitDepth == 16
-                ? new WaveFormat(sampleRate, channels)
-                : WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
-
-            using var writer = new WaveFileWriter(path, waveFormat);
-            writer.WriteSamples(buffer, 0, buffer.Length);
-        }
-
-        /// <summary>
-        /// Loads audio from a reader and converts it to float array format
-        /// </summary>
-        internal static float[] LoadAudioFromReader(WaveFileReader reader, int targetSampleRate,
-            AudioInterleaving format = AudioInterleaving.Deinterleaved, bool mono = true, int bitDepth = 16)
-        {
-            if (bitDepth is not 16 and not 32)
-            {
-                throw new ArgumentException("Bit depth must be either 16 or 32");
-            }
-
-            if (reader.WaveFormat.BitsPerSample != bitDepth)
-            {
-                throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
-            }
-
-            var channels = reader.WaveFormat.Channels;
-            var bytesPerSample = bitDepth / 8;
-            var totalSamples = reader.Length / (bytesPerSample * channels);
-
-            byte[] audioData = new byte[reader.Length];
-            if (reader.Read(audioData, 0, audioData.Length) == 0)
-            {
-                throw new ArgumentException("Input file is empty");
-            }
-
-            float[] buffer = ConvertToFloat(audioData, bitDepth, totalSamples, channels);
-
-            if (mono && channels > 1)
-            {
-                buffer = ConvertToMono(buffer, channels);
-                channels = 1;
-            }
-
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
-            {
-                buffer = ResampleUsingNAudio(buffer, channels, reader.WaveFormat.SampleRate, targetSampleRate);
-            }
-
-            if (channels == 2 && format == AudioInterleaving.Deinterleaved)
-            {
-                buffer = InterleaveToDeinterleave(buffer);
-            }
-
-            return buffer;
-        }
-
-        /// <summary>
-        /// Loads stereo audio from a reader into a float array
-        /// </summary>
-        internal static float[] LoadStereoAudioFromReader(WaveFileReader reader, int targetSampleRate,
-            AudioInterleaving format = AudioInterleaving.Interleaved, int bitDepth = 16)
-        {
-            if (bitDepth is not 16 and not 32)
-            {
-                throw new ArgumentException("Bit depth must be either 16 or 32");
-            }
-
-            if (reader.WaveFormat.Channels != 2)
-            {
-                throw new ArgumentException("Input file must be stereo (2 channels)");
-            }
-
-            if (reader.WaveFormat.BitsPerSample != bitDepth)
-            {
-                throw new ArgumentException($"Input file has {reader.WaveFormat.BitsPerSample} bits per sample, but {bitDepth} was requested");
-            }
-
-            var bytesPerSample = bitDepth / 8;
-            var totalSamplesPerChannel = reader.Length / (bytesPerSample * 2);
-
-            byte[] audioData = new byte[reader.Length];
-            if (reader.Read(audioData, 0, audioData.Length) == 0)
-            {
-                throw new ArgumentException("Input file is empty");
-            }
-
-            float[] buffer = ConvertToFloat(audioData, bitDepth, totalSamplesPerChannel * 2, 2);
-
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
-            {
-                buffer = ResampleUsingNAudio(buffer, 2, reader.WaveFormat.SampleRate, targetSampleRate);
-            }
-
-            if (format == AudioInterleaving.Deinterleaved)
-            {
-                buffer = InterleaveToDeinterleave(buffer);
-            }
-
-            return buffer;
-        }
-
-        /// <summary>
-        /// Sets a custom reader factory for creating WaveFileReader instances
-        /// </summary>
-        internal static void SetReaderFactory(Func<string, WaveFileReader> factory)
-        {
-            _readerFactory = factory;
-        }
-
-        /// <summary>
-        /// Converts byte array audio data to float array
-        /// </summary>
-        private static float[] ConvertToFloat(byte[] audioData, int bitDepth, long totalSamples, int channels)
-        {
-            var result = new float[totalSamples];
-
-            if (bitDepth == 16)
-            {
-                const float scale = 1.0f / 32768.0f;
-                for (long i = 0; i < totalSamples; i++)
-                {
-                    int offset = (int)(i * 2);
-                    result[i] = BitConverter.ToInt16(audioData, offset) * scale;
-                }
-            }
-            else // 32-bit
-            {
-                const float scale = 1.0f / 2147483648.0f;
-                for (long i = 0; i < totalSamples; i++)
-                {
-                    int offset = (int)(i * 4);
-                    result[i] = BitConverter.ToInt32(audioData, offset) * scale;
-                }
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Creates a wave file reader using the configured factory
-        /// </summary>
-        private static WaveFileReader CreateReader(string path)
-        {
-            return _readerFactory(path);
-        }
-
-        /// <summary>
-        /// Resamples audio using NAudio's high-quality resampler
-        /// </summary>
-        private static float[] ResampleUsingNAudio(float[] input, int channels, int sourceSampleRate, int targetSampleRate)
-        {
-            var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sourceSampleRate, channels);
-            var resampler = new WdlResamplingSampleProvider(
-                new FloatArraySampleProvider(waveFormat, input),
-                targetSampleRate
-            );
-
-            var outputLength = (int)((long)input.Length * targetSampleRate / sourceSampleRate);
-            if (outputLength % channels != 0)
-            {
-                outputLength += channels - (outputLength % channels);
-            }
-
-            var output = new float[outputLength];
-            resampler.Read(output, 0, output.Length);
-
-            return output;
-        }
-
-        /// <summary>
-        /// Helper class for loading float arrays as NAudio sample providers
-        /// </summary>
-        private class FloatArraySampleProvider : ISampleProvider
-        {
-            private readonly float[] _samples;
-            private int _position;
-
-            public FloatArraySampleProvider(WaveFormat waveFormat, float[] samples)
-            {
-                WaveFormat = waveFormat;
-                _samples = samples;
-            }
-
-            public WaveFormat WaveFormat { get; }
-
-            public int Read(float[] buffer, int offset, int count)
-            {
-                var availableSamples = Math.Min(count, _samples.Length - _position);
-                Array.Copy(_samples, _position, buffer, offset, availableSamples);
-                _position += availableSamples;
-                return availableSamples;
-            }
         }
     }
 }

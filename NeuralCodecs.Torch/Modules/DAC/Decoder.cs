@@ -8,10 +8,9 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 /// Decoder module that transforms encoded latent representations back into audio waveforms
 /// through a series of upsampling and residual blocks.
 /// </summary>
-public class Decoder : Module<Tensor, Tensor>, IDisposable
+public class Decoder : Module<Tensor, Tensor>
 {
     private readonly Sequential model;
-    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the Decoder class.
@@ -58,17 +57,12 @@ public class Decoder : Module<Tensor, Tensor>, IDisposable
     /// <returns>Decoded audio waveform tensor</returns>
     public override Tensor forward(Tensor x) => model.forward(x);
 
-    /// <summary>
-    /// Disposes the decoder and its resources.
-    /// </summary>
-    public new void Dispose()
+    protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
             model?.Dispose();
-            base.Dispose();
-            _disposed = true;
         }
-        GC.SuppressFinalize(this);
+        base.Dispose(disposing);
     }
 }

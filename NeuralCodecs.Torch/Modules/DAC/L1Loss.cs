@@ -1,3 +1,4 @@
+using TorchSharp;
 using static TorchSharp.torch;
 
 namespace NeuralCodecs.Torch.Modules.DAC;
@@ -24,6 +25,8 @@ public class L1Loss : AudioLossBase
 
     public override Tensor forward(Tensor x, Tensor y)
     {
-        return _l1Loss.forward(x, y) * _weight;
+        using var scope = torch.NewDisposeScope();
+        var loss = _l1Loss.forward(x, y);
+        return loss.mul_(_weight).MoveToOuterDisposeScope();
     }
 }

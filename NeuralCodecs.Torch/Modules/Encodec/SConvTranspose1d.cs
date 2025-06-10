@@ -138,10 +138,7 @@ public class SConvTranspose1d : Module<Tensor, Tensor>
         return y.MoveToOuterDisposeScope();
     }
 
-    /// <summary>
-    /// Disposes the managed resources used by the module.
-    /// </summary>
-    /// <param name="disposing">True to dispose managed resources, false otherwise.</param>
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

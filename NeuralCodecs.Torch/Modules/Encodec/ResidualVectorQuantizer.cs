@@ -1,4 +1,3 @@
-using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -81,10 +80,10 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
         _kmeansIters = kmeansIters;
         _thresholdEmaDeadCode = thresholdEmaDeadCode;
 
-        var vqModules = new List<VectorQuantizer>();
+        layers = new();
         for (int i = 0; i < numQuantizers; i++)
         {
-            vqModules.Add(new VectorQuantizer(
+            layers.Add(new VectorQuantizer(
                 dim: dimension,
                 codebookSize: codebookSize,
                 decay: decay,
@@ -92,14 +91,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
                 kmeansIters: kmeansIters,
                 thresholdEmaDeadCode: thresholdEmaDeadCode));
         }
-        layers = [.. vqModules];
         RegisterComponents();
-
-        // Move to device if specified
-        if (device != null)
-        {
-            this.to(device);
-        }
     }
 
     /// <summary>
@@ -117,7 +109,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
         using var scope = NewDisposeScope();
 
         // Ensure input is on the same device as the model
-        codes = codes.to(this.parameters().First().device);
+        //codes = codes.to(this.parameters().First().device);
         var quantizedOut = zeros(1, device: codes.device);
         var nQ = codes.size(1);
 
@@ -141,7 +133,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
     public Tensor Encode(Tensor x, int frameRate, float? bandwidth = null)
     {
         // Ensure input is on the same device as the model
-        x = x.to(this.parameters().First().device);
+        //x = x.to(this.parameters().First().device);
         var bwPerQ = GetBandwidthPerQuantizer(frameRate);
         var nQ = _numQuantizers;
 
@@ -181,7 +173,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
         using var scope = NewDisposeScope();
 
         // Ensure input is on the same device as the model
-        z = z.to(this.parameters().First().device);
+        //z = z.to(this.parameters().First().device);
         var quantizedOut = zeros_like(z, dtype: z.dtype, device: z.device);
         var residual = z.to(float32).contiguous();
         var allLosses = new List<Tensor>();
@@ -217,7 +209,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
         Tensor x, int frameRate, float? bandwidth = null)
     {
         // Ensure input is on the same device as the model
-        x = x.to(this.parameters().First().device);
+        //x = x.to(this.parameters().First().device);
         var bwPerQ = GetBandwidthPerQuantizer(frameRate);
         var nQ = GetNumQuantizersForBandwidth(frameRate, bandwidth);
 
@@ -233,10 +225,7 @@ public class ResidualVectorQuantizer : Module<Tensor, int, (Tensor quantized, Te
         };
     }
 
-    /// <summary>
-    /// Disposes the managed resources used by the module.
-    /// </summary>
-    /// <param name="disposing">True to dispose managed resources, false otherwise.</param>
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

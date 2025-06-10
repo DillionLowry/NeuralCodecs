@@ -126,6 +126,7 @@ public class WNConv1d : Module<Tensor, Tensor>
                                     .MoveToOuterDisposeScope();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

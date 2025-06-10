@@ -43,6 +43,7 @@ public class WNConv1d : Module<Tensor, Tensor>
     /// <param name="dilation">Spacing between kernel elements. Default is 1.</param>
     /// <param name="groups">Number of blocked connections from input channels to output channels. Default is 1.</param>
     /// <param name="useBias">If true, adds a learnable bias to the output. Default is true.</param>
+    /// <param name="device"></param>
     public WNConv1d(long inChannels, long outChannels, long kernelSize,
         long stride = 1, long padding = 0, long dilation = 1, long groups = 1, bool useBias = true, Device device = null)
         : base($"WNConv1d_{inChannels}_{outChannels}")
@@ -141,15 +142,17 @@ public class WNConv1d : Module<Tensor, Tensor>
         using var scope = NewDisposeScope();
 
         // Compute norm per output channel
-        var v_norm = weight_v.contiguous().pow(2)
-                           .sum([1, 2], keepdim: true, ScalarType.Float32)
-                           .sqrt();
+        var weightSquared = weight_v.contiguous().pow(2);
+        var v_norm = weightSquared.sum([1, 2], keepdim: true, ScalarType.Float32).sqrt();
 
-        weight = mul(weight_v.div(v_norm), weight_g.sub(1e-7f)).contiguous();
+        // Divide weight_v by its norm and multiply by weight_g
+        var normalized = weight_v.div(v_norm.add(1e-7f));
+        weight = mul(normalized, weight_g).contiguous();
 
-        return functional.conv1d(input, weight, bias, _stride,
-                                    _padding, _dilation, _groups)
-                                    .MoveToOuterDisposeScope();
+        var result = functional.conv1d(input, weight, bias, _stride,
+                                _padding, _dilation, _groups);
+
+        return result.MoveToOuterDisposeScope();
     }
 
     // Used in the DAC Discriminator

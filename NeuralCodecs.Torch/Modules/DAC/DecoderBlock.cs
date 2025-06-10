@@ -1,4 +1,3 @@
-using NeuralCodecs.Torch.Modules;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -8,10 +7,9 @@ namespace NeuralCodecs.Torch.Modules.DAC;
 /// <summary>
 /// Represents a decoder block in the DAC (Dilated Audio Codec) architecture.
 /// </summary>
-public class DecoderBlock : Module<Tensor, Tensor>, IDisposable
+public class DecoderBlock : Module<Tensor, Tensor>
 {
     private readonly Sequential block;
-    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the DecoderBlock class.
@@ -49,23 +47,12 @@ public class DecoderBlock : Module<Tensor, Tensor>, IDisposable
     /// Disposes the resources used by this decoder block.
     /// </summary>
     /// <param name="disposing">True to dispose managed resources.</param>
-    protected virtual void Dispose(bool disposing)
+    protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (disposing)
         {
-            if (disposing)
-            {
-                block.Dispose();
-            }
-            _disposed = true;
+            block.Dispose();
         }
-    }
-
-    
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+        base.Dispose(disposing);
     }
 }

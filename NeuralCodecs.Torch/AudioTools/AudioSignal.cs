@@ -323,7 +323,6 @@ public class AudioSignal : IDisposable
 
     #region Methods
 
-    // Additional indexing support
     public AudioSignal this[params int[] indices]
     {
         get
@@ -342,15 +341,15 @@ public class AudioSignal : IDisposable
         {
             if (value.AudioData is not null && AudioData is not null)
             {
-                AudioData.index_put_(indices, value.AudioData);
+                AudioData.index_put_(value.AudioData, indices);
             }
             if (_loudness is not null && value._loudness is not null)
             {
-                _loudness.index_put_(indices, value._loudness);
+                _loudness.index_put_(value._loudness, indices);
             }
             if (_stftData is not null && value._stftData is not null)
             {
-                _stftData.index_put_(indices, value._stftData);
+                _stftData.index_put_(value._stftData, indices);
             }
         }
     }

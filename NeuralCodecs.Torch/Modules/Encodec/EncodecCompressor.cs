@@ -1,8 +1,8 @@
-using NeuralCodecs.Torch.Config.Encodec;
 using NeuralCodecs.Core.Utils;
+using NeuralCodecs.Torch.Config.Encodec;
+using NeuralCodecs.Torch.Utils;
 using TorchSharp;
 using static TorchSharp.torch;
-using NeuralCodecs.Torch.Utils;
 
 namespace NeuralCodecs.Torch.Modules.Encodec;
 

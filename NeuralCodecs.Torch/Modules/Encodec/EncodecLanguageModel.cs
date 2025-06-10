@@ -1,7 +1,6 @@
 using NeuralCodecs.Core;
 using NeuralCodecs.Core.Configuration;
 using NeuralCodecs.Torch.Config.Encodec;
-using System.Diagnostics;
 using TorchSharp.Modules;
 using TorchSharp.PyBridge;
 using static TorchSharp.torch;
@@ -319,7 +318,6 @@ public class EncodecLanguageModel : Module<Tensor, (Tensor probabilities, List<T
 
         try
         {
-            // Determine file type and load appropriately
             if (path.EndsWith(".th") || path.EndsWith(".pth"))
             {
                 // Load PyTorch format
@@ -330,7 +328,6 @@ public class EncodecLanguageModel : Module<Tensor, (Tensor probabilities, List<T
                 // Default TorchSharp format
                 this.load(path);
             }
-
         }
         catch (Exception ex)
         {
@@ -360,6 +357,7 @@ public class EncodecLanguageModel : Module<Tensor, (Tensor probabilities, List<T
         return (probabilities, newStates, newOffset);
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

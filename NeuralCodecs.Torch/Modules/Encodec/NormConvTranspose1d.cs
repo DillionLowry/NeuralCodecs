@@ -75,6 +75,7 @@ public class NormConvTranspose1d : Module<Tensor, Tensor>
         return convOut.MoveToOuterDisposeScope();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -100,9 +101,6 @@ public class NormConvTranspose1d : Module<Tensor, Tensor>
             case "layer_norm":
                 return new ConvLayerNorm((int)conv.out_channels, eps);
 
-            //return normParams.TryGetValue("eps", out object? leps) ? LayerNorm(new long[] { conv.out_channels }, (double)leps)
-            //    : LayerNorm(new long[] { conv.out_channels });
-
             case "group_norm":
             case "time_group_norm":
                 if (causal)
@@ -116,13 +114,6 @@ public class NormConvTranspose1d : Module<Tensor, Tensor>
                     throw new ArgumentException("Cannot determine output channels for group norm");
                 }
 
-                //return new TimeGroupNorm(conv.out_channels, eps);
-                //case "group_norm":
-                //    if (causal)
-                //    {
-                //        throw new ArgumentException(
-                //            "GroupNorm doesn't support causal evaluation");
-                //    }
                 return GroupNorm(1, conv.out_channels, eps, affine: true);
 
             case "weight_norm":

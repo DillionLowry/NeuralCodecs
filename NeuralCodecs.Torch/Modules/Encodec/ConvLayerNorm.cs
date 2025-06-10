@@ -44,6 +44,7 @@ public class ConvLayerNorm : Module<Tensor, Tensor>
         return x.MoveToOuterDisposeScope();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

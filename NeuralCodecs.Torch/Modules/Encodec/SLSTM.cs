@@ -96,6 +96,7 @@ public class SLSTM : Module<Tensor, Tensor>
             (hN.MoveToOuterDisposeScope(), cN.MoveToOuterDisposeScope()));
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

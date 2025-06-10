@@ -59,7 +59,10 @@ public class EuclideanCodebook : Module<Tensor, (Tensor quantized, Tensor indice
 
         embed = Parameter(initFn(new long[] { codebookSize, dimension }));
         cluster_size = Parameter(zeros(codebookSize));
-        embed_avg = Parameter(embed.clone());
+        using (no_grad())
+        {
+            embed_avg = Parameter(embed.detach().clone());
+        }
         inited = Parameter(tensor(new[] { !kmeansInit }, dtype: ScalarType.Float32));
 
         RegisterComponents();
@@ -178,6 +181,7 @@ public class EuclideanCodebook : Module<Tensor, (Tensor quantized, Tensor indice
         return distances.argmin(dim: -1).MoveToOuterDisposeScope();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

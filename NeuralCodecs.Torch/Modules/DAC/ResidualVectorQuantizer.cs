@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
@@ -52,7 +51,6 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
         RegisterComponents();
     }
 
-
     public override (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss) forward(Tensor z)
     {
         using var scope = NewDisposeScope();
@@ -63,21 +61,47 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
 
         for (int i = 0; i < quantizers.Count; i++)
         {
-            var (zQI, _, _, codesI, latentsI) = quantizers[i].forward(residual);
-            zQ += zQI;
-            residual -= zQI;
+            // Process through each quantizer
+            var (zQI, commitLossI, codebookLossI, codesI, latentsI) = quantizers[i].forward(residual);
+
+            // Add to accumulated quantized tensor and update residual
+            zQ.add_(zQI);
+            residual.sub_(zQI);
+
+            // Store codebook indices and latents for return
             codes.Add(codesI);
             latents.Add(latentsI);
+
+            // Dispose intermediate tensors we don't need to return
+            commitLossI.Dispose();
+            codebookLossI.Dispose();
+            zQI.Dispose();
         }
+
+        // Stack the per-codebook tensors along a new dimension
+        var stackedCodes = torch.stack(codes.ToArray(), 1);
+        var catLatents = torch.cat(latents.ToArray(), 1);
+
+        // Create dummy loss tensors (placeholders in this method)
+        var dummyCommitmentLoss = torch.tensor(0.0f);
+        var dummyCodebookLoss = torch.tensor(0.0f);
+
+        // Clear lists to help GC
+        codes.Clear();
+        latents.Clear();
+
+        // Dispose residual as we no longer need it
+        residual.Dispose();
 
         return (
             zQ.MoveToOuterDisposeScope(),
-            torch.stack(codes.ToArray(), 1).MoveToOuterDisposeScope(),
-            torch.cat(latents.ToArray(), 1).MoveToOuterDisposeScope(),
-            torch.tensor(0.0f).MoveToOuterDisposeScope(),  // Placeholder
-            torch.tensor(0.0f).MoveToOuterDisposeScope()   // Placeholder
+            stackedCodes.MoveToOuterDisposeScope(),
+            catLatents.MoveToOuterDisposeScope(),
+            dummyCommitmentLoss.MoveToOuterDisposeScope(),
+            dummyCodebookLoss.MoveToOuterDisposeScope()
         );
     }
+
     public (Tensor quantized, Tensor codes, Tensor latents, Tensor commitmentLoss, Tensor codebookLoss)
         forward(Tensor z, int? nQuantizers)
     {
@@ -96,7 +120,7 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
 
         // Handle number of quantizers and dropout during training
         var batchSize = z.size(0);
-        Tensor nQuantizersPerBatch;
+        Tensor nQuantizersPerBatch = null;
 
         if (training)
         {
@@ -106,7 +130,7 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
             if (_quantizerDropout > 0)
             {
                 // Create random dropout pattern for batch
-                var dropout = randint(1, _nCodebooks + 1, batchSize).to(z.device);
+                using var dropout = randint(1, _nCodebooks + 1, batchSize).to(z.device);
                 var nDropout = (int)(batchSize * _quantizerDropout);
 
                 if (nDropout > 0)
@@ -131,29 +155,46 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
                 break;
             }
 
+            // Get output from this quantizer
             var (zqi, commitmentLossi, codebookLossi, indicesi, zei) =
                 quantizers[i].forward(residual);
 
             // Create mask for this quantizer
-            var mask = full(batchSize, i, device: z.device).lt(nQuantizersPerBatch);
+            using var mask = full(batchSize, i, device: z.device).lt(nQuantizersPerBatch);
 
             // Apply mask along batch dimension and expand to match tensor dimensions
-            var expandedMask = mask.view(batchSize, 1, 1).expand_as(zqi);
+            using var expandedMask = mask.view(batchSize, 1, 1).expand_as(zqi);
 
-            // Add masked quantizer output
-            zQ.add_(where(expandedMask, zqi, zeros_like(zqi)));
+            // Compute the masked quantizer output
+            using var maskedOutput = where(expandedMask, zqi, zeros_like(zqi));
+
+            // Add the masked output to the accumulated result
+            zQ.add_(maskedOutput);
+
+            // Update residual for the next quantizer
             residual.sub_(zqi);
 
-            // Sum losses with mask applied
-            commitmentLoss.add_(mul(commitmentLossi, mask).mean());
-            codebookLoss.add_(mul(codebookLossi, mask).mean());
+            // Process losses with the mask
+            using var maskedCommitmentLoss = mul(commitmentLossi, mask);
+            using var meanCommitmentLoss = maskedCommitmentLoss.mean();
+            commitmentLoss.add_(meanCommitmentLoss);
 
+            using var maskedCodebookLoss = mul(codebookLossi, mask);
+            using var meanCodebookLoss = maskedCodebookLoss.mean();
+            codebookLoss.add_(meanCodebookLoss);
+
+            // Store results
             codebookIndices.Add(indicesi);
             latentsList.Add(zei);
         }
 
+        // Combine tensors from all quantizers
         var codes = stack(codebookIndices, dim: 1);
         var latents = cat(latentsList, dim: 1);
+
+        // Clear lists to help GC
+        codebookIndices.Clear();
+        latentsList.Clear();
 
         return (
             zQ.MoveToOuterDisposeScope(),
@@ -163,7 +204,6 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
             codebookLoss.MoveToOuterDisposeScope()
         );
     }
-
 
     /// <summary>
     /// Reconstructs signal from quantized codes
@@ -178,12 +218,15 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
 
         for (int i = 0; i < nCodebooks; i++)
         {
-            // Decode codes to embeddings
-             var zPi = quantizers[i].DecodeCode(codes[.., i, ..]);
-            projected.Add(zPi.clone());
+            // Get the codes for this quantizer
+            using var codesSlice = codes[.., i, ..];
 
-            // Project to output space
-            var zQi = quantizers[i].OutProj(zPi);
+            // Decode codes to embeddings
+            var zPi = quantizers[i].DecodeCode(codesSlice);
+            projected.Add(zPi.clone().MoveToOuterDisposeScope());
+
+            // Project to output space and add to accumulated result
+            using var zQi = quantizers[i].OutProj(zPi);
             zQ = zQ.add(zQi);
         }
 
@@ -193,6 +236,7 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
             codes.MoveToOuterDisposeScope()
         );
     }
+
     /// <summary>
     /// Reconstructs signal from latent representations
     /// </summary>
@@ -221,27 +265,33 @@ public class ResidualVectorQuantizer : Module<Tensor, (Tensor quantized, Tensor 
             {
                 nCodebooks = i + 1;
             }
-
         }
 
         for (int i = 0; i < nCodebooks; i++)
         {
             var start = dims[i];
             var end = dims[i + 1];
-            var latentSlice = latents.narrow(1, start, end - start);
+
+            // Use using statement for the slice to ensure proper disposal
+            using var latentSlice = latents.narrow(1, start, end - start);
 
             var (zPi, codesI) = quantizers[i].DecodeLatents(latentSlice);
-            projected.Add(zPi.clone());
-            codesList.Add(codesI.clone());
+            projected.Add(zPi.clone().MoveToOuterDisposeScope());
+            codesList.Add(codesI.clone().MoveToOuterDisposeScope());
 
-            var zQi = quantizers[i].OutProj(zPi);
+            // Use using statement for the projected output to ensure proper disposal
+            using var zQi = quantizers[i].OutProj(zPi);
             zQ = zQ.add(zQi);
+
+            // Ensure zPi is disposed after usage since we've cloned it for the output
+            zPi.Dispose();
+            // Ensure codesI is disposed after usage since we've cloned it for the output
+            codesI.Dispose();
         }
 
         return (
             zQ.MoveToOuterDisposeScope(),
             cat(projected, dim: 1).MoveToOuterDisposeScope(),
-            // Condense codes into single tensor
             stack(codesList, dim: 1).MoveToOuterDisposeScope()
         );
     }

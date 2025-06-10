@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace NeuralCodecs.Core.Utils;
 
 /// <summary>
@@ -25,8 +23,7 @@ internal static class Extensions
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
-        if (bufferSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(bufferSize));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferSize);
 
         var buffer = new byte[bufferSize];
         long totalBytesRead = 0;
@@ -34,14 +31,20 @@ internal static class Extensions
         while (true)
         {
             int bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false);
-            if (bytesRead == 0) break; // End of stream
+            if (bytesRead == 0)
+            {
+                break; // End of stream
+            }
 
             await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
 
             totalBytesRead += bytesRead;
             progress?.Report(totalBytesRead);
 
-            if (ct.IsCancellationRequested) break;
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
         }
 
         // Ensure writes are flushed

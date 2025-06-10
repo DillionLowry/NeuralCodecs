@@ -38,8 +38,16 @@ public class WNConv2d : Module<Tensor, Tensor>
         bool useBias = true,
         Device device = null) : base($"WNConv2d_{inChannels}_{outChannels}")
     {
-        if (stride == default) stride = (1, 1);
-        if (padding == default) padding = (0, 0);
+        if (stride == default)
+        {
+            stride = (1, 1);
+        }
+
+        if (padding == default)
+        {
+            padding = (0, 0);
+        }
+
         device ??= torch.CPU;
 
         _stride = stride;
