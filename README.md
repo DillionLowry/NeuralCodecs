@@ -341,7 +341,6 @@ The C# implementation shows slight performance improvement compared to the origi
 - TorchSharp currently lacks torch.compile support, which limits potential speed gains compared to PyTorch
 - Dia's performance is reduced on Windows machines compared to Linux environments 
 - Actual performance will vary based on hardware configuration, text length, and generation parameters
-```
 
 ## Example
 
