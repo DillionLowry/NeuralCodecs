@@ -1,4 +1,4 @@
-# <img src="https://github.com/DillionLowry/NeuralCodecs/blob/main/nc_logo.png" width="50" height="50">  NeuralCodecs [![NuGet Version](https://img.shields.io/nuget/v/NeuralCodecs?style=flat)](https://www.nuget.org/packages/NeuralCodecs)
+# NeuralCodecs [![NuGet Version](https://img.shields.io/nuget/v/NeuralCodecs?style=flat)](https://www.nuget.org/packages/NeuralCodecs)
 
 NeuralCodecs is a .NET library for neural audio codec implementations and TTS models written purely in C#. It includes implementations of SNAC, DAC, Encodec, and Dia, along with advanced audio processing tools.
 
@@ -299,8 +299,6 @@ var fastConfig = new DiaConfig
 
 #### Dia Generation Guidelines
 
-**Memory Usage:** Similar to the python implementation, ~10-11GB GPU memory is required for the Dia model with DAC codec.
-
 **Text Format Requirements:**
 - Always begin input text with `[S1]` speaker tag
 - Alternate between `[S1]` and `[S2]` for dialogue (repeating the same speaker tag consecutively may impact generation)
@@ -327,6 +325,22 @@ var newText = "[S1] Now I will say something completely different.";
 var clonedOutput = diaModel.Generate(
     text: referenceTranscript + " " + newText,
     audioPromptPath: "reference.wav");
+```
+
+#### Dia Performance
+
+**Memory Usage:** Similar to the python implementation, ~10-11GB GPU memory is required for the Dia model with DAC codec.
+
+**Speed Comparison (RTX 3090):**
+The C# implementation shows slight performance improvement compared to the original Python version in my limited testing (Windows/no torch compile):
+
+- **Python (original)**: ~35 tokens/second (without torch.compile)
+- **C# (NeuralCodecs)**: ~40 tokens/second
+
+**Performance Notes:**
+- TorchSharp currently lacks torch.compile support, which limits potential speed gains compared to PyTorch
+- Dia's performance is reduced on Windows machines compared to Linux environments 
+- Actual performance will vary based on hardware configuration, text length, and generation parameters
 ```
 
 ## Example
